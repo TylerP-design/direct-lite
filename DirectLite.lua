@@ -1,4 +1,4 @@
--- Direct Lite 0.1: standalone visuals, replicated inventory and character preview.
+-- Direct Lite 0.2: adjustable visuals, replicated inventory and character preview.
 -- No external loaders, requests, game remotes, license code or telemetry.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -13,7 +13,8 @@ local connections, markers, lootMarkers = {}, {}, {}
 local alive = true
 local config = {esp=false, boxes=true, names=true, skeleton=false, chams=false,
     radar=false, loot=false, maxDistance=1500, radarRange=250,
-    fullInventory=true, previewBox=true, previewTint=true, rotation=0}
+    fullInventory=true, previewBox=true, previewTint=true, rotation=0,
+    menuScale=100, radarSize=178, radarWeapons=true, weaponLabels=true, labelSize=12}
 local cyan = Color3.fromRGB(56, 191, 255)
 local muted = Color3.fromRGB(143, 159, 186)
 local function connect(signal, callback)
@@ -58,7 +59,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.1  /  VISUALS + INVENTORY",UDim2.fromOffset(183,6),UDim2.fromOffset(300,40),muted,11)
+text(top,"0.2  /  VISUALS + INVENTORY",UDim2.fromOffset(183,6),UDim2.fromOffset(300,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -152,13 +153,17 @@ end
 heading(visuals,"PLAYER OVERLAY")
 toggle(visuals,"Player ESP", "esp")
 toggle(visuals,"Bounding boxes", "boxes")
-toggle(visuals,"Name / distance / weapon", "names")
+toggle(visuals,"Player name / distance", "names")
+toggle(visuals,"Equipped-gun labels", "weaponLabels")
+slider(visuals,"Label text size", "labelSize",10,20)
 toggle(visuals,"Skeleton lines", "skeleton")
 toggle(visuals,"Cyan character highlight", "chams")
 slider(visuals,"Maximum distance (studs)","maxDistance",100,3000)
 heading(visuals,"RADAR + DROPPED ITEMS")
 toggle(visuals,"Player radar", "radar")
 slider(visuals,"Radar range (studs)","radarRange",50,1000)
+slider(visuals,"Radar size (pixels)","radarSize",120,500)
+toggle(visuals,"Gun labels beside radar dots","radarWeapons")
 toggle(visuals,"Dropped-item labels", "loot")
 heading(inventory,"SELECT PLAYER")
 local selector=row(inventory,38)
@@ -180,6 +185,8 @@ local itemText=make("TextLabel",inventory,{LayoutOrder=10002,Size=UDim2.new(1,-8
     TextColor3=Color3.fromRGB(204,218,238),Font=Enum.Font.Code,TextSize=12,
     TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,
     TextWrapped=true})
+heading(settings,"MENU SIZE")
+slider(settings,"Menu scale (%)","menuScale",50,150)
 heading(settings,"CHARACTER PREVIEW")
 toggle(settings,"Preview bounding box","previewBox")
 toggle(settings,"Cyan model material","previewTint")
@@ -208,6 +215,9 @@ connect(load.Activated,function()
     config.maxDistance=math.clamp(config.maxDistance,100,3000)
     config.radarRange=math.clamp(config.radarRange,50,1000)
     config.rotation=math.clamp(config.rotation,-180,180)
+    config.menuScale=math.clamp(config.menuScale,50,150)
+    config.radarSize=math.clamp(config.radarSize,120,500)
+    config.labelSize=math.clamp(config.labelSize,10,20)
     for _,refresh in ipairs(refreshControls) do refresh() end
     notice.Text="Settings loaded."
 end)
@@ -237,7 +247,19 @@ local previewLines={}
 local function equipped(character)
     if not character then return "No character" end
     local tool=character:FindFirstChildOfClass("Tool")
-    return tool and tool.Name or "No Tool replicated"
+    if tool then return tool.Name end
+    local target=Players:GetPlayerFromCharacter(character)
+    local folder=RS:FindFirstChild("Players")
+    local entry=folder and folder:FindFirstChild(target and target.Name or character.Name)
+    local statusFolder=entry and entry:FindFirstChild("Status")
+    local gameplay=statusFolder and statusFolder:FindFirstChild("GameplayVariables")
+    local held=gameplay and gameplay:FindFirstChild("EquippedTool")
+    if held and held:IsA("ValueBase") then
+        local value=held.Value
+        if typeof(value)=="Instance" then return value.Name end
+        if value~=nil and tostring(value)~="" and tostring(value)~="None" then return tostring(value) end
+    end
+    return "No equipped weapon replicated"
 end
 local function distanceTo(character)
     local root=character and character:FindFirstChild("HumanoidRootPart")
@@ -319,10 +341,27 @@ local overlay=make("Frame",gui,{Size=UDim2.fromScale(1,1),BackgroundTransparency
 local radar=make("Frame",gui,{Position=UDim2.new(1,-198,0,20),Size=UDim2.fromOffset(178,178),
     BackgroundColor3=Color3.fromRGB(10,22,39),BackgroundTransparency=0.15,
     BorderSizePixel=0,Visible=false})
-round(radar,89)
+make("UICorner",radar,{CornerRadius=UDim.new(0.5,0)})
+radar.Active=true
 make("UIStroke",radar,{Color=cyan,Transparency=0.3})
 text(radar,"N",UDim2.new(0.5,-5,0,5),UDim2.fromOffset(12,16),muted,11)
-make("Frame",radar,{Position=UDim2.fromOffset(87,87),Size=UDim2.fromOffset(4,4),BackgroundColor3=Color3.new(1,1,1),BorderSizePixel=0})
+make("Frame",radar,{Position=UDim2.fromScale(0.5,0.5),AnchorPoint=Vector2.new(0.5,0.5),Size=UDim2.fromOffset(4,4),BackgroundColor3=Color3.new(1,1,1),BorderSizePixel=0})
+local radarDragging,radarDragStart,radarPosition=false,nil,nil
+connect(radar.InputBegan,function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+        radarDragging=true; radarDragStart=input.Position; radarPosition=radar.Position
+    end
+end)
+connect(UIS.InputChanged,function(input)
+    if radarDragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
+        local delta=input.Position-radarDragStart
+        radar.Position=UDim2.new(radarPosition.X.Scale,radarPosition.X.Offset+delta.X,
+            radarPosition.Y.Scale,radarPosition.Y.Offset+delta.Y)
+    end
+end)
+connect(UIS.InputEnded,function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then radarDragging=false end
+end)
 local function newMarker(target)
     local frame=make("Frame",overlay,{BackgroundTransparency=1,Visible=false})
     local box=make("UIStroke",frame,{Color=cyan,Thickness=1})
@@ -330,7 +369,9 @@ local function newMarker(target)
     label.TextXAlignment=Enum.TextXAlignment.Center
     local dot=make("Frame",radar,{Size=UDim2.fromOffset(5,5),BackgroundColor3=cyan,BorderSizePixel=0,Visible=false})
     round(dot,3)
-    markers[target]={frame=frame,box=box,label=label,dot=dot,lines={}}
+    local radarLabel=text(dot,"",UDim2.fromOffset(8,-5),UDim2.fromOffset(150,16),cyan,10)
+    radarLabel.TextTruncate=Enum.TextTruncate.AtEnd
+    markers[target]={frame=frame,box=box,label=label,dot=dot,radarLabel=radarLabel,lines={}}
 end
 local function removeMarker(target)
     local m=markers[target]
@@ -439,7 +480,15 @@ connect(RunService.RenderStepped,function(dt)
     if not alive then return end
     local camera=workspace.CurrentCamera
     if not camera then return end
-    scale.Scale=math.max(0.1,math.min(1,(camera.ViewportSize.X-24)/860,(camera.ViewportSize.Y-24)/560))
+    scale.Scale=math.max(0.1,math.min(config.menuScale/100,(camera.ViewportSize.X-24)/860,(camera.ViewportSize.Y-24)/560))
+    local radarSize=math.min(config.radarSize,math.max(80,math.min(camera.ViewportSize.X,camera.ViewportSize.Y)-24))
+    radar.Size=UDim2.fromOffset(radarSize,radarSize)
+    if not radarDragging then
+        local pos=radar.AbsolutePosition
+        local x=math.clamp(pos.X,0,math.max(0,camera.ViewportSize.X-radarSize))
+        local y=math.clamp(pos.Y,0,math.max(0,camera.ViewportSize.Y-radarSize))
+        radar.Position=UDim2.fromOffset(x,y)
+    end
     radar.Visible=config.radar
     local me=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     for target,m in pairs(markers) do
@@ -466,8 +515,14 @@ connect(RunService.RenderStepped,function(dt)
                     local width=height*0.53
                     m.frame.Position=UDim2.fromOffset(point.X-width/2,point.Y-height/2)
                     m.frame.Size=UDim2.fromOffset(width,height)
-                    m.frame.Visible=true; m.box.Enabled=config.boxes; m.label.Visible=config.names
-                    m.label.Text=target.DisplayName.." / "..math.floor(distance).." studs\n"..equipped(character)
+                    m.frame.Visible=true; m.box.Enabled=config.boxes
+                    m.label.Visible=config.names or config.weaponLabels
+                    m.label.TextSize=config.labelSize
+                    m.label.Size=UDim2.new(1,100,0,config.labelSize*2+6)
+                    m.label.Position=UDim2.new(0,-50,0,-config.labelSize*2-8)
+                    m.label.Text=(config.names and target.DisplayName.." / "..math.floor(distance).." studs" or "")
+                        ..(config.names and config.weaponLabels and "\n" or "")
+                        ..(config.weaponLabels and equipped(character) or "")
                     if config.skeleton then
                         local i=0
                         for _,motor in ipairs(character:GetDescendants()) do
@@ -486,8 +541,14 @@ connect(RunService.RenderStepped,function(dt)
             end
             if config.radar and me then
                 local relative=root.Position-me.Position
-                local point=Vector2.new(relative.X,relative.Z)*(76/config.radarRange)
-                if point.Magnitude<=76 then m.dot.Position=UDim2.fromOffset(89+point.X-2,89+point.Y-2); m.dot.Visible=true end
+                local radius=radarSize/2-13
+                local point=Vector2.new(relative.X,relative.Z)*(radius/config.radarRange)
+                if point.Magnitude<=radius then
+                    m.dot.Position=UDim2.fromOffset(radarSize/2+point.X-2,radarSize/2+point.Y-2)
+                    m.dot.Visible=true
+                    m.radarLabel.Visible=config.radarWeapons
+                    m.radarLabel.Text=equipped(character)
+                end
             end
         end
     end
