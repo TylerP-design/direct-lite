@@ -1,4 +1,4 @@
--- Direct Lite 0.4: rig-aware overlays, square threat radar and workspace menu.
+-- Direct Lite 0.5: colored ESP, health bars, compact radar and side inventory.
 -- No external loaders, requests, game remotes, license code or telemetry.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -19,7 +19,8 @@ local config = {esp=false, boxes=true, names=true, skeleton=false, chams=false,
     aimTeamCheck=false, aimBody=false, aimFov=120, aimSmooth=6, aimCircle=true,
     silentChance=100, perfectSilent=false, npcESP=true, threatLines=true,
     threatAngle=25, climb=false, climbSpeed=22, fovOverride=false, cameraFov=70,
-    modAlerts=true, modNames="", radarRotate=true, lineThickness=2}
+    modAlerts=true, modNames="", radarRotate=true, lineThickness=2,
+    healthBar=true, espRed=56, espGreen=191, espBlue=255}
 local cyan = Color3.fromRGB(56, 191, 255)
 local muted = Color3.fromRGB(143, 159, 186)
 local function connect(signal, callback)
@@ -64,7 +65,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.4    /    WORKSPACE",UDim2.fromOffset(183,6),UDim2.fromOffset(300,40),muted,11)
+text(top,"0.5    /    WORKSPACE",UDim2.fromOffset(183,6),UDim2.fromOffset(300,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -72,7 +73,7 @@ connect(reopen.Activated,function() window.Visible = not window.Visible end)
 local sidebar=make("Frame",window,{Position=UDim2.fromOffset(0,60),Size=UDim2.new(0,155,1,-60),
     BackgroundColor3=Color3.fromRGB(11,21,37),BorderSizePixel=0})
 text(sidebar,"WORKSPACE",UDim2.fromOffset(18,16),UDim2.fromOffset(120,25),muted,10)
-text(sidebar,"DIRECT LITE\nCLIENT 0.4",UDim2.new(0,18,1,-65),UDim2.fromOffset(120,45),muted,10)
+text(sidebar,"DIRECT LITE\nCLIENT 0.5",UDim2.new(0,18,1,-65),UDim2.fromOffset(120,45),muted,10)
 local content = make("Frame",window,{Position=UDim2.fromOffset(175,86),
     Size=UDim2.fromOffset(438,510),BackgroundTransparency=1})
 local pages = {}
@@ -191,11 +192,16 @@ heading(visuals,"PLAYER OVERLAY")
 toggle(visuals,"Player ESP", "esp")
 toggle(visuals,"Include NPCs / test dummies", "npcESP")
 toggle(visuals,"Bounding boxes", "boxes")
+toggle(visuals,"Health bars", "healthBar")
 toggle(visuals,"Player name / distance", "names")
 toggle(visuals,"Equipped-gun labels", "weaponLabels")
 slider(visuals,"Label text size", "labelSize",10,20)
 toggle(visuals,"Skeleton lines", "skeleton")
 slider(visuals,"Line thickness (pixels)","lineThickness",1,4)
+heading(visuals,"ESP COLOR")
+slider(visuals,"Red","espRed",0,255)
+slider(visuals,"Green","espGreen",0,255)
+slider(visuals,"Blue","espBlue",0,255)
 toggle(visuals,"Cyan character highlight", "chams")
 slider(visuals,"Maximum distance (studs)","maxDistance",100,3000)
 heading(radarPage,"TOP-DOWN RADAR")
@@ -286,6 +292,9 @@ connect(load.Activated,function()
     config.climbSpeed=math.clamp(config.climbSpeed,5,50)
     config.cameraFov=math.clamp(config.cameraFov,40,110)
     config.lineThickness=math.clamp(config.lineThickness,1,4)
+    config.espRed=math.clamp(config.espRed,0,255)
+    config.espGreen=math.clamp(config.espGreen,0,255)
+    config.espBlue=math.clamp(config.espBlue,0,255)
     for _,refresh in ipairs(refreshControls) do refresh() end
     notice.Text="Settings loaded."
 end)
@@ -327,7 +336,7 @@ local function equipped(character)
         if typeof(value)=="Instance" then return value.Name end
         if value~=nil and tostring(value)~="" and tostring(value)~="None" then return tostring(value) end
     end
-    return "No equipped weapon replicated"
+    return ""
 end
 local function distanceTo(character)
     local root=character and character:FindFirstChild("HumanoidRootPart")
@@ -371,62 +380,137 @@ local function inventoryRoot(target)
     local entry=container and container:FindFirstChild(target.Name)
     return entry and entry:FindFirstChild("Inventory")
 end
+-- Independent side panel remains available with the main menu hidden.
+local inventoryPanel=make("Frame",gui,{AnchorPoint=Vector2.new(1,0.5),
+    Position=UDim2.new(1,-12,0.5,0),Size=UDim2.fromOffset(325,520),
+    BackgroundColor3=Color3.fromRGB(8,19,34),BorderSizePixel=0,Visible=false,ZIndex=15})
+round(inventoryPanel,10)
+make("UIStroke",inventoryPanel,{Color=cyan,Transparency=0.35})
+text(inventoryPanel,"PLAYER INVENTORY",UDim2.fromOffset(14,8),UDim2.new(1,-65,0,25),cyan,12)
+local dismissInventory=button(inventoryPanel,"X",UDim2.new(1,-38,0,8),UDim2.fromOffset(27,25))
+connect(dismissInventory.Activated,function() inventoryPanel.Visible=false end)
+local sideName=text(inventoryPanel,"",UDim2.fromOffset(14,40),UDim2.new(1,-28,0,26),nil,13)
+sideName.TextTruncate=Enum.TextTruncate.AtEnd
+local sideStatus=text(inventoryPanel,"",UDim2.fromOffset(14,70),UDim2.new(1,-28,0,36),muted,10)
+sideStatus.TextWrapped=true
+local sideScroll=make("ScrollingFrame",inventoryPanel,{Position=UDim2.fromOffset(14,112),
+    Size=UDim2.new(1,-28,1,-148),BackgroundTransparency=1,BorderSizePixel=0,
+    CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=3,ScrollBarImageColor3=cyan})
+local sideItems=text(sideScroll,"",UDim2.new(),UDim2.new(1,-10,0,0),Color3.fromRGB(210,226,245),12)
+sideItems.AutomaticSize=Enum.AutomaticSize.Y
+sideItems.TextWrapped=true
+sideItems.TextYAlignment=Enum.TextYAlignment.Top
+sideItems.Font=Enum.Font.Code
+text(inventoryPanel,"I: inspect crosshair / close same target",UDim2.new(0,14,1,-29),UDim2.new(1,-28,0,23),muted,10)
+local function syncSideInventory(fullText,fullStatus)
+    sideName.Text=selected and selected.DisplayName.." (@"..selected.Name..")" or "No player"
+    sideStatus.Text=fullStatus or status.Text
+    sideItems.Text=fullText or itemText.Text
+end
 local function updateInventory()
     if not selected or selected.Parent~=Players then selected=player; rebuildPreview() end
     selectedLabel.Text=selected.DisplayName.." (@"..selected.Name..")"
     local root=inventoryRoot(selected)
     if not root then
-        status.Text="Inventory is not replicated or not loaded for this player."
-        itemText.Text="No inventory data available."
+        local tools={}
+        for _,container in ipairs({selected.Character or false,selected:FindFirstChild("Backpack") or false}) do
+            if container then for _,tool in ipairs(container:GetChildren()) do
+                if tool:IsA("Tool") then table.insert(tools,tool.Name) end
+            end end
+        end
+        status.Text="Delta inventory not available. Showing replicated Tools only."
+        itemText.Text=#tools>0 and table.concat(tools,"\n") or "No inventory data is replicated for this player."
+        syncSideInventory()
         return
     end
-    local lines, count, visited={},0,{}
+    local lines, fullLines, count, visited={},{},0,{}
     local filter=search.Text:lower()
     local function walk(container,depth)
-        if depth>8 or visited[container] or count>=400 then return end
+        if depth>12 or visited[container] or count>=2000 then return end
         visited[container]=true
         local children=container:GetChildren()
         table.sort(children,function(a,b) return a.Name:lower()<b.Name:lower() end)
         for _,item in ipairs(children) do
-            if count>=400 then return end
+            if count>=2000 then return end
             local slot=item:GetAttribute("Slot")
             local amount=item:GetAttribute("Amount") or item:GetAttribute("Quantity")
             local suffix=(amount and " x"..tostring(amount) or "")..(slot and " ["..tostring(slot).."]" or "")
-            if filter=="" or (item.Name..suffix):lower():find(filter,1,true) then
-                table.insert(lines,string.rep("  ",depth)..item.Name..suffix)
-                count=count+1
+            local line=string.rep("  ",depth)..item.Name..suffix
+            table.insert(fullLines,line)
+            count=count+1
+            if (config.fullInventory or depth==0) and (filter=="" or (item.Name..suffix):lower():find(filter,1,true)) then
+                table.insert(lines,line)
             end
             local nested=item:FindFirstChild("Inventory")
-            if config.fullInventory and nested then walk(nested,depth+1) end
+            if nested then walk(nested,depth+1) end
+            do
+                for _,name in ipairs({"Attachments","LoadedAmmo"}) do
+                    local extra=item:FindFirstChild(name)
+                    if extra then
+                        local heading=string.rep("  ",depth+1).."["..name.."]"
+                        table.insert(fullLines,heading)
+                        if config.fullInventory and filter=="" then table.insert(lines,heading) end
+                        walk(extra,depth+2)
+                    end
+                end
+            end
         end
     end
     walk(root,0)
-    status.Text=tostring(count).." matching entries / replicated data only"..(count>=400 and " / capped at 400" or "")
+    status.Text=tostring(count).." entries / replicated data only"..(count>=2000 and " / truncated at 2000" or "")
     itemText.Text=#lines>0 and table.concat(lines,"\n") or "No matching items."
+    syncSideInventory(#fullLines>0 and table.concat(fullLines,"\n") or "No replicated items.",status.Text)
 end
+local openInventory=button(inventory,"Open side inventory / selected player",UDim2.new(),UDim2.new(1,0,0,32))
+openInventory.LayoutOrder=9999
+connect(openInventory.Activated,function() inventoryPanel.Visible=true; updateInventory() end)
+connect(UIS.InputBegan,function(input,processed)
+    if processed or UIS:GetFocusedTextBox() or input.KeyCode~=Enum.KeyCode.I then return end
+    local camera=workspace.CurrentCamera
+    if not camera then return end
+    local best,closest=nil,180
+    for _,target in ipairs(Players:GetPlayers()) do
+        local character=target.Character
+        local root=character and (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart"))
+        if target~=player and root then
+            local p,visible=camera:WorldToViewportPoint(root.Position)
+            if visible and p.Z>0 then
+                local d=(Vector2.new(p.X,p.Y)-camera.ViewportSize/2).Magnitude
+                if d<closest then closest=d; best=target end
+            end
+        end
+    end
+    if inventoryPanel.Visible and (not best or best==selected) then inventoryPanel.Visible=false; return end
+    if best then selected=best; rebuildPreview() end
+    inventoryPanel.Visible=true
+    updateInventory()
+end)
 -- World overlays use Roblox UI and Highlights; there is no Drawing dependency.
 local overlay=make("Frame",gui,{Size=UDim2.fromScale(1,1),BackgroundTransparency=1})
-local radar=make("Frame",gui,{Position=UDim2.new(1,-198,0,20),Size=UDim2.fromOffset(178,178),
-    BackgroundColor3=Color3.fromRGB(10,22,39),BackgroundTransparency=0.15,
+local radar=make("Frame",gui,{Position=UDim2.fromOffset(16,132),Size=UDim2.fromOffset(230,230),
+    BackgroundColor3=Color3.fromRGB(8,19,34),BackgroundTransparency=0.04,
     BorderSizePixel=0,Visible=false})
 round(radar,8)
 radar.Active=true
 make("UIStroke",radar,{Color=cyan,Transparency=0.3})
 local radarTitle=text(radar,"THREAT RADAR",UDim2.fromOffset(10,5),UDim2.new(1,-20,0,16),cyan,10)
-text(radar,"RED = FACING + CLEAR SIGHT (EST.)",UDim2.new(0,7,1,-22),UDim2.new(1,-14,0,18),muted,8)
+local radarFooter=text(radar,"",UDim2.new(0,9,1,-34),UDim2.new(1,-18,0,30),muted,9)
+local radarPlot=make("Frame",radar,{Position=UDim2.fromOffset(10,29),Size=UDim2.new(1,-20,1,-68),
+    BackgroundColor3=Color3.fromRGB(12,28,46),BorderSizePixel=0,ClipsDescendants=true})
+round(radarPlot,5)
 for i=1,3 do
-    make("Frame",radar,{Position=UDim2.fromScale(i/4,0.12),Size=UDim2.new(0,1,0.76,0),
+    make("Frame",radarPlot,{Position=UDim2.fromScale(i/4,0),Size=UDim2.new(0,1,1,0),
         BorderSizePixel=0,BackgroundColor3=Color3.fromRGB(36,58,78)})
-    make("Frame",radar,{Position=UDim2.fromScale(0.06,0.12+i*0.19),Size=UDim2.new(0.88,0,0,1),
+    make("Frame",radarPlot,{Position=UDim2.fromScale(0,i/4),Size=UDim2.new(1,0,0,1),
         BorderSizePixel=0,BackgroundColor3=Color3.fromRGB(36,58,78)})
 end
 for _,fraction in ipairs({0.25,0.5,0.75}) do
-    local ring=make("Frame",radar,{AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),
+    local ring=make("Frame",radarPlot,{AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),
         Size=UDim2.fromScale(fraction,fraction),BackgroundTransparency=1})
     make("UICorner",ring,{CornerRadius=UDim.new(0.5,0)})
     make("UIStroke",ring,{Color=Color3.fromRGB(31,83,121),Thickness=1})
 end
-make("Frame",radar,{Position=UDim2.fromScale(0.5,0.5),AnchorPoint=Vector2.new(0.5,0.5),Size=UDim2.fromOffset(4,4),BackgroundColor3=Color3.new(1,1,1),BorderSizePixel=0})
+text(radarPlot,"^",UDim2.new(0.5,-7,0.5,-8),UDim2.fromOffset(14,16),Color3.new(1,1,1),16)
 local radarDragging,radarDragStart,radarPosition=false,nil,nil
 connect(radar.InputBegan,function(input)
     if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
@@ -450,13 +534,18 @@ local function newMarker(target)
     label.TextXAlignment=Enum.TextXAlignment.Center
     label.TextStrokeTransparency=0.35
     label.TextStrokeColor3=Color3.fromRGB(0,0,0)
-    local dot=make("Frame",radar,{Size=UDim2.fromOffset(5,5),BackgroundColor3=cyan,BorderSizePixel=0,Visible=false})
+    local health=make("Frame",frame,{Position=UDim2.fromOffset(-7,0),Size=UDim2.new(0,4,1,0),
+        BackgroundColor3=Color3.fromRGB(18,22,29),BorderSizePixel=0,Visible=false})
+    local healthFill=make("Frame",health,{AnchorPoint=Vector2.new(0,1),Position=UDim2.fromScale(0,1),
+        Size=UDim2.fromScale(1,1),BackgroundColor3=Color3.fromRGB(60,230,100),BorderSizePixel=0})
+    local dot=make("Frame",radarPlot,{Size=UDim2.fromOffset(6,6),BackgroundColor3=cyan,BorderSizePixel=0,Visible=false})
     round(dot,3)
     local radarLabel=text(dot,"",UDim2.fromOffset(8,-5),UDim2.fromOffset(150,16),cyan,10)
     radarLabel.TextTruncate=Enum.TextTruncate.AtEnd
-    local facing=make("Frame",radar,{AnchorPoint=Vector2.new(0.5,0.5),BorderSizePixel=0,
+    local facing=make("Frame",radarPlot,{AnchorPoint=Vector2.new(0.5,0.5),BorderSizePixel=0,
         BackgroundColor3=Color3.fromRGB(255,76,90),Visible=false})
-    markers[target]={frame=frame,box=box,label=label,dot=dot,radarLabel=radarLabel,facing=facing,lines={}}
+    markers[target]={frame=frame,box=box,label=label,dot=dot,radarLabel=radarLabel,facing=facing,
+        health=health,healthFill=healthFill,lines={}}
 end
 local function removeMarker(target)
     local m=markers[target]
@@ -789,16 +878,19 @@ connect(RunService.RenderStepped,function(dt)
     local camera=workspace.CurrentCamera
     if not camera then return end
     scale.Scale=math.max(0.1,math.min(config.menuScale/100,(camera.ViewportSize.X-24)/980,(camera.ViewportSize.Y-24)/620))
-    local radarSize=math.min(config.radarSize,math.max(80,math.min(camera.ViewportSize.X,camera.ViewportSize.Y)-24))
-    radar.Size=UDim2.fromOffset(radarSize,radarSize)
-    radarTitle.Text=config.radarRotate and "THREAT RADAR / CAMERA UP" or "THREAT RADAR / NORTH UP"
+    local radarSize=math.min(config.radarSize,math.max(80,math.min(camera.ViewportSize.X-24,camera.ViewportSize.Y-72)))
+    radar.Size=UDim2.fromOffset(radarSize,radarSize+48)
+    radarTitle.Text=config.radarRotate and "RADAR / CAMERA UP" or "RADAR / NORTH UP"
+    radarFooter.Text=config.radarRange.." studs\nRed: facing + clear sight (estimate)"
+    inventoryPanel.Size=UDim2.fromOffset(math.min(325,camera.ViewportSize.X-24),math.min(520,camera.ViewportSize.Y-32))
     if not radarDragging then
         local pos=radar.AbsolutePosition
         local x=math.clamp(pos.X,0,math.max(0,camera.ViewportSize.X-radarSize))
-        local y=math.clamp(pos.Y,0,math.max(0,camera.ViewportSize.Y-radarSize))
+        local y=math.clamp(pos.Y,0,math.max(0,camera.ViewportSize.Y-radarSize-48))
         radar.Position=UDim2.fromOffset(x,y)
     end
     radar.Visible=config.radar
+    local espColor=Color3.fromRGB(config.espRed,config.espGreen,config.espBlue)
     local me=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     for target,m in pairs(markers) do
         local character=entityCharacter(target)
@@ -814,6 +906,7 @@ connect(RunService.RenderStepped,function(dt)
                 OutlineColor=cyan,OutlineTransparency=0.1,DepthMode=Enum.HighlightDepthMode.AlwaysOnTop})
         end
         if m.highlight then m.highlight.Enabled=not not (config.esp and config.chams and valid) end
+        if m.highlight then m.highlight.FillColor=espColor; m.highlight.OutlineColor=espColor end
         if valid then
             if config.esp then
                 local point,onScreen=camera:WorldToViewportPoint(root.Position)
@@ -825,14 +918,19 @@ connect(RunService.RenderStepped,function(dt)
                     m.frame.Position=UDim2.fromOffset(point.X-width/2,point.Y-height/2)
                     m.frame.Size=UDim2.fromOffset(width,height)
                     m.frame.Visible=true; m.box.Enabled=config.boxes
+                    m.box.Color=espColor; m.label.TextColor3=espColor
                     m.box.Thickness=config.lineThickness
+                    m.health.Visible=config.healthBar
+                    local hp=math.clamp(humanoid.Health/math.max(1,humanoid.MaxHealth),0,1)
+                    m.healthFill.Size=UDim2.fromScale(1,hp)
+                    m.healthFill.BackgroundColor3=Color3.fromRGB(math.floor(255*(1-hp)),math.floor(70+180*hp),65)
                     m.label.Visible=config.names or config.weaponLabels
                     m.label.TextSize=config.labelSize
                     m.label.Size=UDim2.new(1,100,0,config.labelSize*2+6)
                     m.label.Position=UDim2.new(0,-50,0,-config.labelSize*2-8)
+                    local weapon=config.weaponLabels and equipped(character) or ""
                     m.label.Text=(config.names and entityName(target).." / "..math.floor(distance).." studs" or "")
-                        ..(config.names and config.weaponLabels and "\n" or "")
-                        ..(config.weaponLabels and equipped(character) or "")
+                        ..(config.names and weapon~="" and "\n" or "")..weapon
                     if config.skeleton then
                         local i=0
                         for _,motor in ipairs(character:GetDescendants()) do
@@ -842,6 +940,7 @@ connect(RunService.RenderStepped,function(dt)
                                 if av and bv and a.Z>0 and b.Z>0 then
                                     i=i+1
                                     if not m.lines[i] then m.lines[i]=make("Frame",overlay,{AnchorPoint=Vector2.new(0.5,0.5),BorderSizePixel=0,BackgroundColor3=cyan}) end
+                                    m.lines[i].BackgroundColor3=espColor
                                     drawLine(m.lines[i],Vector2.new(a.X,a.Y),Vector2.new(b.X,b.Y))
                                 end
                             end
@@ -851,7 +950,9 @@ connect(RunService.RenderStepped,function(dt)
             end
             if config.radar and me then
                 local relative=root.Position-me.Position
-                local radius=radarSize/2-30
+                local plotSize=radarPlot.AbsoluteSize
+                local center=plotSize/2
+                local radius=math.max(1,math.min(plotSize.X,plotSize.Y)/2-8)
                 local forward=Vector3.new(camera.CFrame.LookVector.X,0,camera.CFrame.LookVector.Z)
                 if forward.Magnitude<0.001 then forward=Vector3.new(0,0,-1) else forward=forward.Unit end
                 local right=Vector3.new(-forward.Z,0,forward.X)
@@ -861,7 +962,7 @@ connect(RunService.RenderStepped,function(dt)
                 end
                 local point=project(relative)
                 if math.abs(point.X)<=radius and math.abs(point.Y)<=radius then
-                    m.dot.Position=UDim2.fromOffset(radarSize/2+point.X-2,radarSize/2+point.Y-2)
+                    m.dot.Position=UDim2.fromOffset(center.X+point.X-3,center.Y+point.Y-3)
                     m.dot.Visible=true
                     m.radarLabel.Visible=false
                     local head=character:FindFirstChild("Head") or root
@@ -878,9 +979,9 @@ connect(RunService.RenderStepped,function(dt)
                     local danger=facing and visible
                     m.dot.BackgroundColor3=danger and Color3.fromRGB(255,76,90) or cyan
                     if config.threatLines then
-                        local start=Vector2.new(radarSize/2+point.X,radarSize/2+point.Y)
-                        local finish=danger and Vector2.new(radarSize/2,radarSize/2) or start+project(head.CFrame.LookVector*math.min(config.radarRange*0.12,30))
-                        finish=Vector2.new(math.clamp(finish.X,20,radarSize-20),math.clamp(finish.Y,25,radarSize-25))
+                        local start=center+point
+                        local finish=danger and center or start+project(head.CFrame.LookVector*math.min(config.radarRange*0.12,30))
+                        finish=Vector2.new(math.clamp(finish.X,0,plotSize.X),math.clamp(finish.Y,0,plotSize.Y))
                         m.facing.BackgroundColor3=danger and Color3.fromRGB(255,76,90) or Color3.fromRGB(67,111,143)
                         drawLine(m.facing,start,finish)
                     end
