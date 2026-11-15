@@ -1,4 +1,4 @@
--- Direct Lite 0.6: card workspace, staff evidence checks and silent diagnostics.
+-- Direct Lite 0.7: screenshot feature parity, item tiles and reversible controls.
 -- No external loaders, requests, game remotes, license code or telemetry.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -21,7 +21,12 @@ local config = {esp=false, boxes=true, names=true, skeleton=false, chams=false,
     threatAngle=25, climb=false, climbSpeed=22, fovOverride=false, cameraFov=70,
     modAlerts=true, modNames="", radarRotate=true, lineThickness=2,
     healthBar=true, espRed=56, espGreen=191, espBlue=255,
-    modGroup="3765739", modRoles="moderator,head moderator,admin,developer,lead developer"}
+    modGroup="3765739", modRoles="moderator,head moderator,admin,developer,lead developer",
+    friendESP=false, corpseESP=false, minesESP=false, bossTracker=false,
+    fastRun=false, runSpeed=24, infiniteJump=false, noVisorFlash=false, statsGui=false,
+    zoom=false, zoomFov=35, alwaysDay=false, noFog=false, fullbright=false,
+    lootContainers=false, lootCashRegister=true, lootFilingCabinet=true,
+    lootFridge=true, lootGrenadeCrate=true, lootHiddenCache=true}
 local cyan = Color3.fromRGB(56, 191, 255)
 local muted = Color3.fromRGB(143, 159, 186)
 local sectionTargets={}
@@ -68,7 +73,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.6.1    /    PRIVATE WORKSPACE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
+text(top,"0.7    /    DIRECT LITE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -76,7 +81,7 @@ connect(reopen.Activated,function() window.Visible = not window.Visible end)
 local sidebar=make("Frame",window,{Position=UDim2.fromOffset(0,60),Size=UDim2.new(0,155,1,-60),
     BackgroundColor3=Color3.fromRGB(11,21,37),BorderSizePixel=0})
 text(sidebar,"WORKSPACE",UDim2.fromOffset(18,16),UDim2.fromOffset(120,25),muted,10)
-text(sidebar,"DIRECT LITE\nCLIENT 0.6.1",UDim2.new(0,18,1,-65),UDim2.fromOffset(120,45),muted,10)
+text(sidebar,"DIRECT LITE\nCLIENT 0.7",UDim2.new(0,18,1,-55),UDim2.fromOffset(120,40),muted,10)
 local pageTitle=text(window,"Aim",UDim2.fromOffset(175,65),UDim2.fromOffset(650,30),nil,21)
 local content = make("Frame",window,{Position=UDim2.fromOffset(175,108),
     Size=UDim2.fromOffset(787,488),BackgroundTransparency=1})
@@ -108,10 +113,12 @@ local movement=page("Movement")
 local radarPage=page("Radar")
 local weapons=page("Weapons")
 local staff=page("Staff")
+local lootPage=page("Loot")
+local worldPage=page("World")
 local tabs={}
-for i,name in ipairs({"Combat","Visuals","Radar","Movement","Weapons","Inventory","Staff","Settings"}) do
+for i,name in ipairs({"Combat","Visuals","Loot","Radar","Movement","Weapons","World","Inventory","Staff","Settings"}) do
     local display=({Combat="Aim",Visuals="ESP"})[name] or name
-    local b=button(sidebar,display,UDim2.fromOffset(12,52+(i-1)*43),UDim2.fromOffset(131,35))
+    local b=button(sidebar,display,UDim2.fromOffset(12,43+(i-1)*43),UDim2.fromOffset(131,35))
     tabs[name]=b
     connect(b.Activated,function()
         pageTitle.Text=display
@@ -220,7 +227,11 @@ combatStatus.TextWrapped=true
 combatStatus.TextYAlignment=Enum.TextYAlignment.Top
 heading(visuals,"PLAYER OVERLAY")
 toggle(visuals,"Player ESP", "esp")
+toggle(visuals,"Friend ESP (green)","friendESP")
 toggle(visuals,"Include NPCs / test dummies", "npcESP")
+toggle(visuals,"Corpse ESP","corpseESP")
+toggle(visuals,"Mines ESP","minesESP")
+toggle(visuals,"Boss tracker","bossTracker")
 toggle(visuals,"Bounding boxes", "boxes")
 toggle(visuals,"Health bars", "healthBar")
 toggle(visuals,"Player name / distance", "names")
@@ -244,6 +255,20 @@ toggle(radarPage,"Facing / clear sight red lines","threatLines")
 slider(radarPage,"Facing angle tolerance (degrees)","threatAngle",5,60)
 heading(visuals,"DROPPED ITEMS")
 toggle(visuals,"Dropped-item labels", "loot")
+heading(lootPage,"LOOT DETECTION")
+toggle(lootPage,"Dropped-item ESP","loot")
+toggle(lootPage,"Container ESP","lootContainers")
+heading(lootPage,"CONTAINER FILTERS")
+for _,name in ipairs({"CashRegister","FilingCabinet","Fridge","GrenadeCrate","HiddenCache"}) do
+    toggle(lootPage,name,"loot"..name)
+end
+heading(worldPage,"ENVIRONMENT")
+toggle(worldPage,"Always day","alwaysDay")
+toggle(worldPage,"No fog","noFog")
+toggle(worldPage,"Fullbright","fullbright")
+heading(worldPage,"DISPLAY")
+toggle(worldPage,"Stats card","statsGui")
+toggle(worldPage,"Hide known visor / flash overlays","noVisorFlash")
 heading(inventory,"SELECT PLAYER")
 local selector=row(inventory,38)
 local prev=button(selector,"<",UDim2.fromOffset(4,4),UDim2.fromOffset(33,30))
@@ -269,9 +294,15 @@ slider(settings,"Menu scale (%)","menuScale",50,150)
 heading(movement,"WALL CLIMB")
 toggle(movement,"Wall climb: hold W + Space near wall","climb")
 slider(movement,"Climb speed (studs / second)","climbSpeed",5,50)
+heading(movement,"MOVEMENT")
+toggle(movement,"Fast run","fastRun")
+slider(movement,"Run speed","runSpeed",16,40)
+toggle(movement,"Infinite jump (may be rejected by game)","infiniteJump")
 heading(movement,"CAMERA")
 toggle(movement,"Override camera FOV","fovOverride")
 slider(movement,"Camera field of view (degrees)","cameraFov",40,110)
+toggle(movement,"Zoom camera","zoom")
+slider(movement,"Zoom field of view","zoomFov",15,60)
 heading(staff,"KNOWN ACCOUNT WATCHLIST")
 toggle(staff,"Enable staff alerts","modAlerts")
 local modNames=make("TextBox",staff,{Size=UDim2.new(1,0,0,38),LayoutOrder=order+1,
@@ -348,6 +379,8 @@ connect(load.Activated,function()
     config.espRed=math.clamp(config.espRed,0,255)
     config.espGreen=math.clamp(config.espGreen,0,255)
     config.espBlue=math.clamp(config.espBlue,0,255)
+    config.runSpeed=math.clamp(config.runSpeed,16,40)
+    config.zoomFov=math.clamp(config.zoomFov,15,60)
     for _,refresh in ipairs(refreshControls) do refresh() end
     notice.Text="Settings loaded."
 end)
@@ -444,6 +477,8 @@ local dismissInventory=button(inventoryPanel,"X",UDim2.new(1,-38,0,8),UDim2.from
 connect(dismissInventory.Activated,function() inventoryPanel.Visible=false end)
 local sideName=text(inventoryPanel,"",UDim2.fromOffset(14,40),UDim2.new(1,-28,0,26),nil,13)
 sideName.TextTruncate=Enum.TextTruncate.AtEnd
+local sideValue=text(inventoryPanel,"VALUE: --",UDim2.new(1,-145,0,8),UDim2.fromOffset(98,25),Color3.fromRGB(245,211,90),10)
+sideValue.TextXAlignment=Enum.TextXAlignment.Right
 local sideStatus=text(inventoryPanel,"",UDim2.fromOffset(14,70),UDim2.new(1,-28,0,36),muted,10)
 sideStatus.TextWrapped=true
 local sideScroll=make("ScrollingFrame",inventoryPanel,{Position=UDim2.fromOffset(14,112),
@@ -454,29 +489,120 @@ sideItems.AutomaticSize=Enum.AutomaticSize.Y
 sideItems.TextWrapped=true
 sideItems.TextYAlignment=Enum.TextYAlignment.Top
 sideItems.Font=Enum.Font.Code
-text(inventoryPanel,"I: inspect crosshair / close same target",UDim2.new(0,14,1,-29),UDim2.new(1,-28,0,23),muted,10)
-local function syncSideInventory(fullText,fullStatus)
+local tileState={entries={},fingerprint="",page=1}
+local tileContents=make("Frame",sideScroll,{Size=UDim2.new(1,-8,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1})
+make("UIListLayout",tileContents,{Padding=UDim.new(0,9),SortOrder=Enum.SortOrder.LayoutOrder})
+local tilePrev=button(inventoryPanel,"<",UDim2.new(0,14,1,-29),UDim2.fromOffset(28,23))
+local tileNext=button(inventoryPanel,">",UDim2.new(1,-42,1,-29),UDim2.fromOffset(28,23))
+local tilePage=text(inventoryPanel,"I: inspect",UDim2.new(0,50,1,-29),UDim2.new(1,-100,0,23),muted,10)
+tilePage.TextXAlignment=Enum.TextXAlignment.Center
+local function tileIcon(entry)
+    local icon=entry.source:GetAttribute("Image") or entry.source:GetAttribute("Icon") or entry.source:GetAttribute("ImageId")
+    if type(icon)=="number" then return "rbxassetid://"..icon end
+    if type(icon)=="string" and icon~="" then return tonumber(icon) and "rbxassetid://"..icon or icon end
+    if entry.source:IsA("Tool") then return entry.source.TextureId end
+    return nil
+end
+local function renderTiles()
+    for _,object in ipairs(tileContents:GetChildren()) do if not object:IsA("UIListLayout") then object:Destroy() end end
+    local pages=math.max(1,math.ceil(#tileState.entries/48))
+    tileState.page=math.clamp(tileState.page,1,pages)
+    tilePage.Text="I: inspect / page "..tileState.page.." of "..pages
+    tilePrev.Visible=pages>1; tileNext.Visible=pages>1
+    local frames={}
+    for i,label in ipairs({"EQUIPPED / TOP LEVEL","BACKPACK & CONTAINERS"}) do
+        local title=text(tileContents,label,UDim2.new(),UDim2.new(1,0,0,22),cyan,10)
+        title.LayoutOrder=i*2-1
+        local grid=make("Frame",tileContents,{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+            BackgroundTransparency=1,LayoutOrder=i*2})
+        make("UIGridLayout",grid,{CellSize=UDim2.fromOffset(61,76),CellPadding=UDim2.fromOffset(5,5),SortOrder=Enum.SortOrder.LayoutOrder})
+        frames[i]=grid
+    end
+    for index=(tileState.page-1)*48+1,math.min(#tileState.entries,tileState.page*48) do
+        local entry=tileState.entries[index]
+        local tile=make("Frame",frames[entry.depth==0 and 1 or 2],{BackgroundColor3=Color3.fromRGB(18,29,46),BorderSizePixel=0,LayoutOrder=index})
+        round(tile,6)
+        make("UIStroke",tile,{Color=Color3.fromRGB(42,60,82),Transparency=0.2})
+        local icon=tileIcon(entry)
+        if icon and icon~="" then
+            make("ImageLabel",tile,{Position=UDim2.fromOffset(6,5),Size=UDim2.new(1,-12,0,43),BackgroundTransparency=1,Image=icon,ScaleType=Enum.ScaleType.Fit})
+        else
+            local library=RS:FindFirstChild("ItemsList")
+            local model=library and library:FindFirstChild(entry.name)
+            if model and not (model:IsA("Model") or model:IsA("BasePart")) then model=model:FindFirstChildWhichIsA("Model") or model:FindFirstChildWhichIsA("BasePart") end
+            if model then
+                local view=make("ViewportFrame",tile,{Position=UDim2.fromOffset(4,4),Size=UDim2.new(1,-8,0,43),BackgroundTransparency=1,Ambient=Color3.fromRGB(180,180,180)})
+                local wm=make("WorldModel",view,{})
+                local ok,clone=pcall(function() return model:Clone() end)
+                if ok and clone then
+                    if clone:IsA("BasePart") then clone.Anchored=true; clone.CanCollide=false end
+                    for _,object in ipairs(clone:GetDescendants()) do
+                        if object:IsA("Script") or object:IsA("LocalScript") or object:IsA("ModuleScript") or object:IsA("Sound") then object:Destroy()
+                        elseif object:IsA("BasePart") then object.Anchored=true; object.CanCollide=false end
+                    end
+                    clone.Parent=wm
+                    local cf,size
+                    if clone:IsA("Model") then cf,size=clone:GetBoundingBox() else cf,size=clone.CFrame,clone.Size end
+                    local camera=make("Camera",view,{FieldOfView=35})
+                    camera.CFrame=CFrame.lookAt(cf.Position+Vector3.new(0,0,-math.max(size.X,size.Y,size.Z)*2.5-0.2),cf.Position)
+                    view.CurrentCamera=camera
+                end
+            else
+                local initial=text(tile,entry.name:sub(1,2):upper(),UDim2.fromOffset(4,4),UDim2.new(1,-8,0,40),muted,19)
+                initial.TextXAlignment=Enum.TextXAlignment.Center
+            end
+        end
+        local label=text(tile,entry.name,UDim2.fromOffset(4,48),UDim2.new(1,-8,0,24),nil,9)
+        label.TextWrapped=true; label.TextXAlignment=Enum.TextXAlignment.Center
+        if entry.amount then
+            local qty=text(tile,"x"..entry.amount,UDim2.new(0,2,0,1),UDim2.new(1,-4,0,13),cyan,9)
+            qty.TextXAlignment=Enum.TextXAlignment.Right
+        end
+    end
+end
+connect(tilePrev.Activated,function() tileState.page=tileState.page-1; renderTiles() end)
+connect(tileNext.Activated,function() tileState.page=tileState.page+1; renderTiles() end)
+local function syncSideInventory(fullText,fullStatus,entries)
     sideName.Text=selected and selected.DisplayName.." (@"..selected.Name..")" or "No player"
     sideStatus.Text=fullStatus or status.Text
     sideItems.Text=fullText or itemText.Text
+    tileContents.Visible=entries~=nil and #entries>0
+    sideItems.Visible=not tileContents.Visible
+    if entries then
+        local total,priced=0,#entries>0
+        for _,entry in ipairs(entries) do
+            local props=entry.source:FindFirstChild("ItemProperties")
+            local value=entry.source:GetAttribute("Price") or entry.source:GetAttribute("Value")
+                or props and (props:GetAttribute("Price") or props:GetAttribute("Value"))
+            if type(value)=="number" then total=total+value*(tonumber(entry.amount) or 1) else priced=false end
+        end
+        sideValue.Text=priced and "VALUE: $"..math.floor(total) or "VALUE: --"
+        local keys={tostring(selected and selected.UserId)}
+        for _,entry in ipairs(entries) do table.insert(keys,entry.name..":"..tostring(entry.amount)..":"..entry.depth) end
+        local fingerprint=table.concat(keys,"|")
+        tileState.entries=entries
+        if inventoryPanel.Visible and fingerprint~=tileState.fingerprint then
+            tileState.fingerprint=fingerprint; tileState.page=1; renderTiles()
+        end
+    end
 end
 local function updateInventory()
     if not selected or selected.Parent~=Players then selected=player; rebuildPreview() end
     selectedLabel.Text=selected.DisplayName.." (@"..selected.Name..")"
     local root=inventoryRoot(selected)
     if not root then
-        local tools={}
+        local tools,entries={},{}
         for _,container in ipairs({selected.Character or false,selected:FindFirstChild("Backpack") or false}) do
             if container then for _,tool in ipairs(container:GetChildren()) do
-                if tool:IsA("Tool") then table.insert(tools,tool.Name) end
+                if tool:IsA("Tool") then table.insert(tools,tool.Name); table.insert(entries,{name=tool.Name,depth=0,source=tool}) end
             end end
         end
         status.Text="Delta inventory not available. Showing replicated Tools only."
         itemText.Text=#tools>0 and table.concat(tools,"\n") or "No inventory data is replicated for this player."
-        syncSideInventory()
+        syncSideInventory(nil,nil,entries)
         return
     end
-    local lines, fullLines, count, visited={},{},0,{}
+    local lines, fullLines, entries, count, visited={},{},{},0,{}
     local filter=search.Text:lower()
     local function walk(container,depth)
         if depth>12 or visited[container] or count>=2000 then return end
@@ -490,6 +616,7 @@ local function updateInventory()
             local suffix=(amount and " x"..tostring(amount) or "")..(slot and " ["..tostring(slot).."]" or "")
             local line=string.rep("  ",depth)..item.Name..suffix
             table.insert(fullLines,line)
+            table.insert(entries,{name=item.Name,amount=amount,depth=depth,slot=slot,source=item})
             count=count+1
             if (config.fullInventory or depth==0) and (filter=="" or (item.Name..suffix):lower():find(filter,1,true)) then
                 table.insert(lines,line)
@@ -512,7 +639,7 @@ local function updateInventory()
     walk(root,0)
     status.Text=tostring(count).." entries / replicated data only"..(count>=2000 and " / truncated at 2000" or "")
     itemText.Text=#lines>0 and table.concat(lines,"\n") or "No matching items."
-    syncSideInventory(#fullLines>0 and table.concat(fullLines,"\n") or "No replicated items.",status.Text)
+    syncSideInventory(#fullLines>0 and table.concat(fullLines,"\n") or "No replicated items.",status.Text,entries)
 end
 local openInventory=button(inventory,"Open side inventory / selected player",UDim2.new(),UDim2.new(1,0,0,32))
 openInventory.LayoutOrder=9999
@@ -791,6 +918,161 @@ local function aimTarget(camera)
 end
 local recoilCount=0
 local wasNoRecoil=false
+local extraState={lighting={},atmospheres={},walk={},effects={},markers={},friends={},started=os.clock()}
+local footer=text(window,"DIRECT LITE / Right Shift to hide",UDim2.fromOffset(175,597),UDim2.new(1,-195,0,18),muted,10)
+local statsCard=make("Frame",gui,{Position=UDim2.new(0,16,1,-110),Size=UDim2.fromOffset(282,88),
+    BackgroundColor3=Color3.fromRGB(9,18,31),BorderSizePixel=0,Visible=false})
+round(statsCard,10)
+make("UIStroke",statsCard,{Color=cyan,Thickness=1})
+local portrait=make("ImageLabel",statsCard,{Position=UDim2.fromOffset(10,13),Size=UDim2.fromOffset(58,58),
+    BackgroundColor3=Color3.fromRGB(21,35,50),BorderSizePixel=0,
+    Image="rbxthumb://type=AvatarHeadShot&id="..player.UserId.."&w=100&h=100"})
+round(portrait,8)
+local statsText=text(statsCard,"",UDim2.fromOffset(78,8),UDim2.new(1,-86,1,-16),cyan,11)
+statsText.TextYAlignment=Enum.TextYAlignment.Top
+local function restoreExtra()
+    local lighting=game:GetService("Lighting")
+    for key,value in pairs(extraState.lighting) do lighting[key]=value end
+    extraState.lighting={}
+    for atmosphere,values in pairs(extraState.atmospheres) do
+        if atmosphere.Parent then atmosphere.Density=values[1]; atmosphere.Haze=values[2] end
+    end
+    extraState.atmospheres={}
+    for humanoid,speed in pairs(extraState.walk) do if humanoid.Parent then humanoid.WalkSpeed=speed end end
+    extraState.walk={}
+    for object,visible in pairs(extraState.effects) do if object.Parent then object.Visible=visible end end
+    extraState.effects={}
+end
+local function updateExtra()
+    local active=0
+    for _,key in ipairs({"esp","friendESP","corpseESP","minesESP","bossTracker","radar","loot","lootContainers","aimbot","silentAim","noRecoil","climb","fastRun","infiniteJump","noVisorFlash","statsGui","zoom","alwaysDay","noFog","fullbright"}) do
+        if config[key] then active=active+1 end
+    end
+    footer.Text="DIRECT LITE / "..active.." features enabled / Right Shift to hide"
+    local lighting=game:GetService("Lighting")
+    local values={ClockTime=config.alwaysDay and 14 or nil,
+        FogStart=config.noFog and 100000 or nil,FogEnd=config.noFog and 1000000 or nil,
+        Brightness=config.fullbright and 3 or nil,
+        Ambient=config.fullbright and Color3.fromRGB(180,180,180) or nil,
+        OutdoorAmbient=config.fullbright and Color3.fromRGB(180,180,180) or nil}
+    for _,key in ipairs({"ClockTime","FogStart","FogEnd","Brightness","Ambient","OutdoorAmbient"}) do
+        if values[key]~=nil then
+            if extraState.lighting[key]==nil then extraState.lighting[key]=lighting[key] end
+            lighting[key]=values[key]
+        elseif extraState.lighting[key]~=nil then lighting[key]=extraState.lighting[key]; extraState.lighting[key]=nil end
+    end
+    if config.noFog then
+        for _,object in ipairs(lighting:GetChildren()) do if object:IsA("Atmosphere") then
+            if not extraState.atmospheres[object] then extraState.atmospheres[object]={object.Density,object.Haze} end
+            object.Density=0; object.Haze=0
+        end end
+    else
+        for object,original in pairs(extraState.atmospheres) do
+            if object.Parent then object.Density=original[1]; object.Haze=original[2] end
+            extraState.atmospheres[object]=nil
+        end
+    end
+    local humanoid=player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+    if config.fastRun and humanoid then
+        if not extraState.walk[humanoid] then extraState.walk[humanoid]=humanoid.WalkSpeed end
+        humanoid.WalkSpeed=config.runSpeed
+    elseif not config.fastRun then
+        for object,speed in pairs(extraState.walk) do if object.Parent then object.WalkSpeed=speed end; extraState.walk[object]=nil end
+    end
+    local pg=player:FindFirstChild("PlayerGui")
+    local noInset=pg and pg:FindFirstChild("NoInsetGui")
+    local main=noInset and noInset:FindFirstChild("MainFrame")
+    local effects=main and main:FindFirstChild("ScreenEffects")
+    if config.noVisorFlash and effects then
+        for _,name in ipairs({"Visor","Mask","HelmetMask","Flashbang"}) do
+            local object=effects:FindFirstChild(name)
+            if object and object:IsA("GuiObject") then
+                if extraState.effects[object]==nil then extraState.effects[object]=object.Visible end
+                object.Visible=false
+            end
+        end
+    elseif not config.noVisorFlash then
+        for object,visible in pairs(extraState.effects) do if object.Parent then object.Visible=visible end; extraState.effects[object]=nil end
+    end
+    statsCard.Visible=config.statsGui
+    if config.statsGui then
+        local entries=RS:FindFirstChild("Players")
+        local entry=entries and entries:FindFirstChild(player.Name)
+        local s=entry and entry:FindFirstChild("Status")
+        local journey=s and s:FindFirstChild("Journey")
+        local wipe=journey and journey:FindFirstChild("WipeStatistics")
+        local kills=wipe and wipe:GetAttribute("Kills")
+        local deaths=wipe and wipe:GetAttribute("Deaths")
+        local leaderstats=player:FindFirstChild("leaderstats")
+        local k=leaderstats and leaderstats:FindFirstChild("Kills")
+        local d=leaderstats and leaderstats:FindFirstChild("Deaths")
+        kills=type(kills)=="number" and kills or k and k.Value or nil
+        deaths=type(deaths)=="number" and deaths or d and d.Value or nil
+        local kd=type(kills)=="number" and type(deaths)=="number" and string.format("%.2f",kills/math.max(1,deaths)) or "--"
+        statsText.Text="KILLS: "..tostring(kills or "--").."   DEATHS: "..tostring(deaths or "--")
+            .."\nK/D: "..kd.."   SESSION: "..math.floor((os.clock()-extraState.started)/60).."m\n@"..player.Name
+    end
+    if config.friendESP then
+        for _,target in ipairs(Players:GetPlayers()) do
+            if target~=player and extraState.friends[target.UserId]==nil then
+                extraState.friends[target.UserId]=false
+                task.spawn(function()
+                    local ok,value=pcall(function() return player:IsFriendsWithAsync(target.UserId) end)
+                    if alive and ok then extraState.friends[target.UserId]=value end
+                end)
+            end
+        end
+    end
+end
+local function updateSpecialMarkers()
+    local seen={}
+    local count=0
+    local function add(object,label,color)
+        if count>=150 or seen[object] then return end
+        local part=object:IsA("BasePart") and object or object:FindFirstChildWhichIsA("BasePart",true)
+        if not part then return end
+        count=count+1; seen[object]=true
+        local record=extraState.markers[object]
+        if not record then
+            local bill=make("BillboardGui",gui,{Adornee=part,AlwaysOnTop=true,Size=UDim2.fromOffset(190,24),StudsOffset=Vector3.new(0,2,0)})
+            local labelObject=text(bill,label,UDim2.new(),UDim2.fromScale(1,1),color,11)
+            labelObject.TextXAlignment=Enum.TextXAlignment.Center
+            labelObject.TextStrokeTransparency=0.4
+            record={bill=bill,label=labelObject}; extraState.markers[object]=record
+        end
+        record.bill.MaxDistance=config.maxDistance
+        record.label.Text=label; record.label.TextColor3=color
+    end
+    local dropped=workspace:FindFirstChild("DroppedItems")
+    if config.corpseESP and dropped then
+        for _,object in ipairs(dropped:GetChildren()) do
+            if object:FindFirstChildOfClass("Humanoid") then add(object,object.Name.." / CORPSE",Color3.fromRGB(166,115,255)) end
+        end
+    end
+    local containers=workspace:FindFirstChild("Containers")
+    if config.lootContainers and containers then
+        for _,object in ipairs(containers:GetChildren()) do
+            if config["loot"..object.Name] then add(object,object.Name,Color3.fromRGB(249,205,98)) end
+        end
+    end
+    local zones=workspace:FindFirstChild("AiZones")
+    if zones and (config.minesESP or config.bossTracker) then
+        local bosses={Anton=true,Dozer=true,Whisper=true,Death=true,MI24V=true}
+        for _,object in ipairs(zones:GetDescendants()) do
+            if config.minesESP and (object.Name=="PMN2" or object.Name=="MON50") then add(object,"MINE / "..object.Name,Color3.fromRGB(255,92,77)) end
+            if config.bossTracker and bosses[object.Name] and object:IsA("Model") then add(object,"BOSS / "..object.Name,Color3.fromRGB(255,110,67)) end
+        end
+    end
+    for object,record in pairs(extraState.markers) do
+        if not seen[object] or not object.Parent then record.bill:Destroy(); extraState.markers[object]=nil end
+    end
+end
+connect(UIS.JumpRequest,function()
+    if config.infiniteJump and not UIS:GetFocusedTextBox() then
+        local humanoid=player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid and humanoid.Health>0 then humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end
+end)
 local cameraOriginals={}
 local alerted={}
 local roleCache={}
@@ -882,9 +1164,9 @@ local function updateCombat(dt)
     if not alive then return end
     local camera=workspace.CurrentCamera
     if not camera then return end
-    if config.fovOverride then
+    if config.fovOverride or config.zoom then
         if not cameraOriginals[camera] then cameraOriginals[camera]=camera.FieldOfView end
-        camera.FieldOfView=config.cameraFov
+        camera.FieldOfView=config.zoom and config.zoomFov or config.cameraFov
     elseif next(cameraOriginals) then restoreFov() end
     if config.climb and not UIS:GetFocusedTextBox() and UIS:IsKeyDown(Enum.KeyCode.W) and UIS:IsKeyDown(Enum.KeyCode.Space) then
         local character=player.Character
@@ -991,6 +1273,7 @@ local function cleanup()
     RunService:UnbindFromRenderStep(bindName)
     restoreRecoil()
     restoreFov()
+    restoreExtra()
     releaseViewmodel()
     for _,connection in ipairs(connections) do connection:Disconnect() end
     local list={}
@@ -1012,7 +1295,7 @@ connect(RunService.RenderStepped,function(dt)
     radar.Size=UDim2.fromOffset(radarSize,radarSize+48)
     radarTitle.Text=config.radarRotate and "RADAR / CAMERA UP" or "RADAR / NORTH UP"
     radarFooter.Text=config.radarRange.." studs\nRed: facing + clear sight (estimate)"
-    inventoryPanel.Size=UDim2.fromOffset(math.min(325,camera.ViewportSize.X-24),math.min(520,camera.ViewportSize.Y-32))
+    inventoryPanel.Size=UDim2.fromOffset(math.min(430,camera.ViewportSize.X-24),math.min(650,camera.ViewportSize.Y-32))
     if not radarDragging then
         local pos=radar.AbsolutePosition
         local x=math.clamp(pos.X,0,math.max(0,camera.ViewportSize.X-radarSize))
@@ -1023,6 +1306,9 @@ connect(RunService.RenderStepped,function(dt)
     local espColor=Color3.fromRGB(config.espRed,config.espGreen,config.espBlue)
     local me=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     for target,m in pairs(markers) do
+        local isFriend=target:IsA("Player") and extraState.friends[target.UserId]==true
+        local showESP=config.esp or (config.friendESP and isFriend)
+        local entityColor=isFriend and config.friendESP and Color3.fromRGB(61,238,109) or espColor
         local character=entityCharacter(target)
         local root=rootPart(character)
         local humanoid=character and character:FindFirstChildOfClass("Humanoid")
@@ -1031,14 +1317,14 @@ connect(RunService.RenderStepped,function(dt)
         m.frame.Visible=false; m.dot.Visible=false; m.facing.Visible=false
         for _,line in ipairs(m.lines) do line.Visible=false end
         if m.highlight and m.highlight.Adornee~=character then m.highlight:Destroy(); m.highlight=nil end
-        if config.esp and config.chams and valid and not m.highlight then
+        if showESP and config.chams and valid and not m.highlight then
             m.highlight=make("Highlight",gui,{Adornee=character,FillColor=cyan,FillTransparency=0.65,
                 OutlineColor=cyan,OutlineTransparency=0.1,DepthMode=Enum.HighlightDepthMode.AlwaysOnTop})
         end
-        if m.highlight then m.highlight.Enabled=not not (config.esp and config.chams and valid) end
-        if m.highlight then m.highlight.FillColor=espColor; m.highlight.OutlineColor=espColor end
+        if m.highlight then m.highlight.Enabled=not not (showESP and config.chams and valid) end
+        if m.highlight then m.highlight.FillColor=entityColor; m.highlight.OutlineColor=entityColor end
         if valid then
-            if config.esp then
+            if showESP then
                 local point,onScreen=camera:WorldToViewportPoint(root.Position)
                 if onScreen and point.Z>0 then
                     local above=camera:WorldToViewportPoint(root.Position+Vector3.new(0,3.5,0))
@@ -1048,7 +1334,7 @@ connect(RunService.RenderStepped,function(dt)
                     m.frame.Position=UDim2.fromOffset(point.X-width/2,point.Y-height/2)
                     m.frame.Size=UDim2.fromOffset(width,height)
                     m.frame.Visible=true; m.box.Enabled=config.boxes
-                    m.box.Color=espColor; m.label.TextColor3=espColor
+                    m.box.Color=entityColor; m.label.TextColor3=entityColor
                     m.box.Thickness=config.lineThickness
                     m.health.Visible=config.healthBar
                     local hp=math.clamp(humanoid.Health/math.max(1,humanoid.MaxHealth),0,1)
@@ -1070,7 +1356,7 @@ connect(RunService.RenderStepped,function(dt)
                                 if av and bv and a.Z>0 and b.Z>0 then
                                     i=i+1
                                     if not m.lines[i] then m.lines[i]=make("Frame",overlay,{AnchorPoint=Vector2.new(0.5,0.5),BorderSizePixel=0,BackgroundColor3=cyan}) end
-                                    m.lines[i].BackgroundColor3=espColor
+                                    m.lines[i].BackgroundColor3=entityColor
                                     drawLine(m.lines[i],Vector2.new(a.X,a.Y),Vector2.new(b.X,b.Y))
                                 end
                             end
@@ -1120,10 +1406,10 @@ connect(RunService.RenderStepped,function(dt)
         end
     end
     timer=timer+dt; previewTimer=previewTimer+dt; rigTimer=rigTimer+dt
-    if rigTimer>=3 then rigTimer=0; scanRigs() end
+    if rigTimer>=3 then rigTimer=0; scanRigs(); updateSpecialMarkers() end
     if timer>=1 then
         timer=0
-        updateInventory(); updateLoot(); checkModerators()
+        updateInventory(); updateLoot(); checkModerators(); updateExtra()
     end
     if previewTimer>=2 and window.Visible then previewTimer=0; rebuildPreview() end
     previewStroke.Enabled=config.previewBox
