@@ -1,4 +1,4 @@
--- Direct Lite 0.8.1: indexed scene updates and reduced background UI work.
+-- Direct Lite 0.8.2: hold-to-inspect, real item icons and stacked side staff alerts.
 -- No external loaders, requests, game remotes, license code or telemetry.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -91,7 +91,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.8.1    /    DIRECT LITE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
+text(top,"0.8.2    /    DIRECT LITE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -99,7 +99,7 @@ connect(reopen.Activated,function() window.Visible = not window.Visible end)
 local sidebar=make("Frame",window,{Position=UDim2.fromOffset(0,60),Size=UDim2.new(0,155,1,-60),
     BackgroundColor3=Color3.fromRGB(11,21,37),BorderSizePixel=0})
 text(sidebar,"WORKSPACE",UDim2.fromOffset(18,16),UDim2.fromOffset(120,25),muted,10)
-text(sidebar,"DIRECT LITE / 0.8.1",UDim2.new(0,12,1,-25),UDim2.fromOffset(131,20),muted,9)
+text(sidebar,"DIRECT LITE / 0.8.2",UDim2.new(0,12,1,-25),UDim2.fromOffset(131,20),muted,9)
 local sceneStatus=text(sidebar,"Checking scene...",UDim2.fromOffset(12,478),UDim2.fromOffset(131,48),muted,10)
 sceneStatus.TextWrapped=true
 local pageTitle=text(window,"Aim",UDim2.fromOffset(175,65),UDim2.fromOffset(650,30),nil,21)
@@ -250,7 +250,7 @@ toggle(home,"Always day","alwaysDay")
 toggle(home,"Zoom","zoom")
 heading(home,"HOW TO INSPECT")
 local inspectorInfo=row(home,118)
-local inspectorText=text(inspectorInfo,"Inventory: click a player in the roster, then open the side panel.\nI: inspect a nearby crosshair target.\nRight Shift: show / hide menu.\nScene status shows actual loaded targets.",UDim2.fromOffset(8,5),UDim2.new(1,-16,1,-10),muted,11)
+local inspectorText=text(inspectorInfo,"Hold I while looking near a player to inspect their items. Release I to close.\nHover a tile for its name.\nRight Shift: show / hide menu.\nScene status shows actual loaded targets.",UDim2.fromOffset(8,5),UDim2.new(1,-16,1,-10),muted,11)
 inspectorText.TextWrapped=true
 inspectorText.TextYAlignment=Enum.TextYAlignment.Top
 heading(combat,"AIM / SILENT AIM")
@@ -579,13 +579,19 @@ sideItems.TextWrapped=true
 sideItems.TextYAlignment=Enum.TextYAlignment.Top
 sideItems.Font=Enum.Font.Code
 local tileState={entries={},fingerprint="",page=1}
+local inspectState={held=false,target=nil,elapsed=0}
 local tileContents=make("Frame",sideScroll,{Size=UDim2.new(1,-8,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1})
 make("UIListLayout",tileContents,{Padding=UDim.new(0,9),SortOrder=Enum.SortOrder.LayoutOrder})
 local tilePrev=button(inventoryPanel,"<",UDim2.new(0,14,1,-29),UDim2.fromOffset(28,23))
 local tileNext=button(inventoryPanel,">",UDim2.new(1,-42,1,-29),UDim2.fromOffset(28,23))
-local tilePage=text(inventoryPanel,"I: inspect",UDim2.new(0,50,1,-29),UDim2.new(1,-100,0,23),muted,10)
+local tilePage=text(inventoryPanel,"Hold I to inspect",UDim2.new(0,50,1,-29),UDim2.new(1,-100,0,23),muted,10)
 tilePage.TextXAlignment=Enum.TextXAlignment.Center
 local function tileIcon(entry)
+    local library=RS:FindFirstChild("ItemsList")
+    local template=library and library:FindFirstChild(entry.name)
+    local properties=template and template:FindFirstChild("ItemProperties")
+    local itemIcon=properties and properties:FindFirstChild("ItemIcon")
+    if itemIcon and (itemIcon:IsA("ImageLabel") or itemIcon:IsA("ImageButton")) and itemIcon.Image~="" then return itemIcon.Image end
     local icon=entry.source:GetAttribute("Image") or entry.source:GetAttribute("Icon") or entry.source:GetAttribute("ImageId")
     if type(icon)=="number" then return "rbxassetid://"..icon end
     if type(icon)=="string" and icon~="" then return tonumber(icon) and "rbxassetid://"..icon or icon end
@@ -597,7 +603,7 @@ local function renderTiles()
     for _,object in ipairs(tileContents:GetChildren()) do if not object:IsA("UIListLayout") then object:Destroy() end end
     local pages=math.max(1,math.ceil(#tileState.entries/48))
     tileState.page=math.clamp(tileState.page,1,pages)
-    tilePage.Text="I: inspect / page "..tileState.page.." of "..pages
+    tilePage.Text="Hold I / page "..tileState.page.." of "..pages
     tilePrev.Visible=pages>1; tileNext.Visible=pages>1
     local frames={}
     for i,label in ipairs({"EQUIPPED / TOP LEVEL","BACKPACK & CONTAINERS"}) do
@@ -611,6 +617,7 @@ local function renderTiles()
     for index=(tileState.page-1)*48+1,math.min(#tileState.entries,tileState.page*48) do
         local entry=tileState.entries[index]
         local tile=make("Frame",frames[entry.depth==0 and 1 or 2],{BackgroundColor3=Color3.fromRGB(18,29,46),BorderSizePixel=0,LayoutOrder=index})
+        tile.Active=true
         round(tile,6)
         make("UIStroke",tile,{Color=Color3.fromRGB(42,60,82),Transparency=0.2})
         local icon=tileIcon(entry)
@@ -638,12 +645,15 @@ local function renderTiles()
                     view.CurrentCamera=camera
                 end
             else
-                local initial=text(tile,entry.name:sub(1,2):upper(),UDim2.fromOffset(4,4),UDim2.new(1,-8,0,40),muted,19)
+                local initial=text(tile,"?",UDim2.fromOffset(4,4),UDim2.new(1,-8,0,40),muted,19)
                 initial.TextXAlignment=Enum.TextXAlignment.Center
             end
         end
         local label=text(tile,entry.name,UDim2.fromOffset(4,48),UDim2.new(1,-8,0,24),nil,9)
         label.TextWrapped=true; label.TextXAlignment=Enum.TextXAlignment.Center
+        label.Visible=false
+        tile.MouseEnter:Connect(function() label.Visible=true end)
+        tile.MouseLeave:Connect(function() label.Visible=false end)
         local qty=text(tile,entry.amount and "x"..entry.amount or "",UDim2.new(0,2,0,1),UDim2.new(1,-4,0,13),cyan,9)
         qty.TextXAlignment=Enum.TextXAlignment.Right
         tileState.quantityLabels[index]=qty
@@ -681,6 +691,12 @@ local function syncSideInventory(fullText,fullStatus,entries)
     end
 end
 local function updateInventory()
+    if inspectState.held and not inspectState.target then
+        sideName.Text="Point at another player"
+        sideStatus.Text="Hold I near a player's character. Release to close."
+        tileContents.Visible=false; sideItems.Visible=false; sideValue.Text="VALUE: --"
+        return
+    end
     if not selected or selected.Parent~=Players then
         selected=player
         for _,candidate in ipairs(Players:GetPlayers()) do if candidate~=player then selected=candidate; break end end
@@ -740,14 +756,13 @@ local function updateInventory()
     itemText.Text=#lines>0 and table.concat(lines,"\n") or "No matching items."
     syncSideInventory(#fullLines>0 and table.concat(fullLines,"\n") or "No replicated items.",status.Text,entries)
 end
-local openInventory=button(inventory,"Open side inventory / selected player",UDim2.new(),UDim2.new(1,0,0,32))
+local openInventory=button(inventory,"Hold I near a player / release to close",UDim2.new(),UDim2.new(1,0,0,32))
 openInventory.LayoutOrder=9999
-connect(openInventory.Activated,function() inventoryPanel.Visible=true; updateInventory() end)
-connect(UIS.InputBegan,function(input,processed)
-    if processed or UIS:GetFocusedTextBox() or input.KeyCode~=Enum.KeyCode.I then return end
+connect(openInventory.Activated,function() updateInventory() end)
+local function refreshHeldInspector()
     local camera=workspace.CurrentCamera
-    if not camera then return end
-    local best,closest=nil,math.huge
+    local best,closest=nil,180
+    if camera then
     for _,target in ipairs(Players:GetPlayers()) do
         local character=target.Character
         local root=character and (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart"))
@@ -759,21 +774,23 @@ connect(UIS.InputBegan,function(input,processed)
             end
         end
     end
-    if inventoryPanel.Visible and (not best or best==selected) then inventoryPanel.Visible=false; return end
-    if not best then
-        local me=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        closest=math.huge
-        for _,target in ipairs(Players:GetPlayers()) do
-            local root=target.Character and target.Character:FindFirstChild("HumanoidRootPart")
-            if target~=player and root and me then
-                local d=(root.Position-me.Position).Magnitude
-                if d<closest then closest=d; best=target end
-            end
-        end
     end
-    if best then selected=best; rosterState.manual=true; rebuildPreview() end
+    local changed=inspectState.target~=best
+    inspectState.target=best
+    if best and selected~=best then selected=best; rosterState.manual=true; rebuildPreview() end
     inventoryPanel.Visible=true
-    updateInventory()
+    if changed or not best or tileState.fingerprint=="" then updateInventory() end
+end
+connect(UIS.InputBegan,function(input)
+    if UIS:GetFocusedTextBox() or input.KeyCode~=Enum.KeyCode.I then return end
+    inspectState.held=true; inspectState.elapsed=0
+    refreshHeldInspector()
+end)
+connect(UIS.InputEnded,function(input)
+    if input.KeyCode==Enum.KeyCode.I then inspectState.held=false; inspectState.target=nil; inventoryPanel.Visible=false end
+end)
+connect(UIS.WindowFocusReleased,function()
+    inspectState.held=false; inspectState.target=nil; inventoryPanel.Visible=false
 end)
 -- World overlays use Roblox UI and Highlights; there is no Drawing dependency.
 local overlay=make("Frame",gui,{Size=UDim2.fromScale(1,1),BackgroundTransparency=1})
@@ -1228,17 +1245,28 @@ local function configuredGroup()
     if config.modGroup:match("^%s*$") and game.CreatorType==Enum.CreatorType.Group then return game.CreatorId end
     return nil
 end
+local alertToasts={}
+local function arrangeAlerts()
+    for i,toast in ipairs(alertToasts) do toast.Position=UDim2.new(1,-14,0,90+(i-1)*92) end
+end
 local function notifyStaff(target,reason)
     if alerted[target.UserId] or not config.modAlerts or not alive then return end
     alerted[target.UserId]=true
     pcall(function() game:GetService("StarterGui"):SetCore("SendNotification",{
         Title="Direct Lite / staff evidence",Text=target.Name..": "..reason,Duration=10}) end)
-    local toast=make("Frame",gui,{Position=UDim2.new(0.5,-200,0,20),Size=UDim2.fromOffset(400,65),
+    local toast=make("Frame",gui,{AnchorPoint=Vector2.new(1,0),Position=UDim2.new(1,-14,0,90),Size=UDim2.fromOffset(350,84),
         BackgroundColor3=Color3.fromRGB(110,33,50),BorderSizePixel=0,ZIndex=30})
     round(toast,8)
-    local message=text(toast,target.Name.."\n"..reason,UDim2.fromOffset(12,6),UDim2.new(1,-24,1,-12),nil,12)
+    table.insert(alertToasts,toast)
+    if #alertToasts>3 then table.remove(alertToasts,1):Destroy() end
+    arrangeAlerts()
+    local message=text(toast,"STAFF ALERT / @"..target.Name.."\n"..reason,UDim2.fromOffset(12,6),UDim2.new(1,-24,1,-12),nil,12)
     message.TextWrapped=true; message.ZIndex=31
-    task.delay(10,function() if toast.Parent then toast:Destroy() end end)
+    task.delay(10,function()
+        for i,value in ipairs(alertToasts) do if value==toast then table.remove(alertToasts,i); break end end
+        if toast.Parent then toast:Destroy() end
+        arrangeAlerts()
+    end)
 end
 local function restoreFov()
     for camera,original in pairs(cameraOriginals) do
@@ -1295,6 +1323,7 @@ local function checkModerators()
     end)
 end
 connect(scanStaff.Activated,function() roleCache={}; alerted={}; checkModerators() end)
+connect(Players.PlayerAdded,function() task.defer(function() if alive then checkModerators() end end) end)
 connect(Players.PlayerRemoving,function(target) alerted[target.UserId]=nil end)
 local bindName="DirectLiteCombat"
 local function updateCombat(dt)
@@ -1429,6 +1458,10 @@ connect(RunService.RenderStepped,function(dt)
     overlayElapsed=overlayElapsed+dt
     if overlayElapsed<1/30 then return end
     dt=overlayElapsed; overlayElapsed=0
+    if inspectState.held then
+        inspectState.elapsed=inspectState.elapsed+dt
+        if inspectState.elapsed>=0.15 then inspectState.elapsed=0; refreshHeldInspector() end
+    end
     local camera=workspace.CurrentCamera
     if not camera then return end
     scale.Scale=math.max(0.1,math.min(config.menuScale/100,(camera.ViewportSize.X-24)/980,(camera.ViewportSize.Y-24)/620))
