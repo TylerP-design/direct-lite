@@ -1,4 +1,4 @@
--- Direct Lite 0.8: player-first inspector, loading stages and scene diagnostics.
+-- Direct Lite 0.8.1: indexed scene updates and reduced background UI work.
 -- No external loaders, requests, game remotes, license code or telemetry.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -91,7 +91,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.8    /    DIRECT LITE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
+text(top,"0.8.1    /    DIRECT LITE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -99,7 +99,7 @@ connect(reopen.Activated,function() window.Visible = not window.Visible end)
 local sidebar=make("Frame",window,{Position=UDim2.fromOffset(0,60),Size=UDim2.new(0,155,1,-60),
     BackgroundColor3=Color3.fromRGB(11,21,37),BorderSizePixel=0})
 text(sidebar,"WORKSPACE",UDim2.fromOffset(18,16),UDim2.fromOffset(120,25),muted,10)
-text(sidebar,"DIRECT LITE / 0.8",UDim2.new(0,12,1,-25),UDim2.fromOffset(131,20),muted,9)
+text(sidebar,"DIRECT LITE / 0.8.1",UDim2.new(0,12,1,-25),UDim2.fromOffset(131,20),muted,9)
 local sceneStatus=text(sidebar,"Checking scene...",UDim2.fromOffset(12,478),UDim2.fromOffset(131,48),muted,10)
 sceneStatus.TextWrapped=true
 local pageTitle=text(window,"Aim",UDim2.fromOffset(175,65),UDim2.fromOffset(650,30),nil,21)
@@ -483,6 +483,7 @@ local function distanceTo(character)
     return root and me and (root.Position-me.Position).Magnitude or nil
 end
 local function rebuildPreview()
+    if not window.Visible or not preview.Visible then return end
     world:ClearAllChildren()
     clonedCharacter=nil; originals={}; lastTint=nil
     sourceCharacter=selected and selected.Character
@@ -592,6 +593,7 @@ local function tileIcon(entry)
     return nil
 end
 local function renderTiles()
+    tileState.quantityLabels={}
     for _,object in ipairs(tileContents:GetChildren()) do if not object:IsA("UIListLayout") then object:Destroy() end end
     local pages=math.max(1,math.ceil(#tileState.entries/48))
     tileState.page=math.clamp(tileState.page,1,pages)
@@ -642,10 +644,9 @@ local function renderTiles()
         end
         local label=text(tile,entry.name,UDim2.fromOffset(4,48),UDim2.new(1,-8,0,24),nil,9)
         label.TextWrapped=true; label.TextXAlignment=Enum.TextXAlignment.Center
-        if entry.amount then
-            local qty=text(tile,"x"..entry.amount,UDim2.new(0,2,0,1),UDim2.new(1,-4,0,13),cyan,9)
-            qty.TextXAlignment=Enum.TextXAlignment.Right
-        end
+        local qty=text(tile,entry.amount and "x"..entry.amount or "",UDim2.new(0,2,0,1),UDim2.new(1,-4,0,13),cyan,9)
+        qty.TextXAlignment=Enum.TextXAlignment.Right
+        tileState.quantityLabels[index]=qty
     end
 end
 connect(tilePrev.Activated,function() tileState.page=tileState.page-1; renderTiles() end)
@@ -666,11 +667,16 @@ local function syncSideInventory(fullText,fullStatus,entries)
         end
         sideValue.Text=priced and "VALUE: $"..math.floor(total) or "VALUE: --"
         local keys={tostring(selected and selected.UserId)}
-        for _,entry in ipairs(entries) do table.insert(keys,entry.name..":"..tostring(entry.amount)..":"..entry.depth) end
+        for _,entry in ipairs(entries) do table.insert(keys,entry.name..":"..entry.depth..":"..tostring(entry.slot)) end
         local fingerprint=table.concat(keys,"|")
         tileState.entries=entries
         if inventoryPanel.Visible and fingerprint~=tileState.fingerprint then
             tileState.fingerprint=fingerprint; tileState.page=1; renderTiles()
+        elseif inventoryPanel.Visible then
+            for index,label in pairs(tileState.quantityLabels or {}) do
+                local entry=entries[index]
+                if entry and label.Parent then label.Text=entry.amount and "x"..entry.amount or "" end
+            end
         end
     end
 end
@@ -858,6 +864,27 @@ local function rootPart(character)
     return character:FindFirstChild("HumanoidRootPart") or (humanoid and humanoid.RootPart)
         or character.PrimaryPart or character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
 end
+local sceneIndex={humanoids={},special={}}
+local function indexObject(object,remove)
+    if object:IsA("Humanoid") then
+        sceneIndex.humanoids[object]=not remove or nil
+        if remove and object.Parent and not Players:GetPlayerFromCharacter(object.Parent) then removeMarker(object.Parent) end
+    end
+    if remove then sceneIndex.special[object]=nil; return end
+    if object.Name=="PMN2" or object.Name=="MON50" or object.Name=="Anton" or object.Name=="Dozer"
+        or object.Name=="Whisper" or object.Name=="Death" or object.Name=="MI24V" then
+        sceneIndex.special[object]=not remove or nil
+    end
+end
+connect(workspace.DescendantAdded,function(object) indexObject(object,false) end)
+connect(workspace.DescendantRemoving,function(object) indexObject(object,true) end)
+task.spawn(function()
+    for i,object in ipairs(workspace:GetDescendants()) do
+        if not alive then return end
+        indexObject(object,false)
+        if i%200==0 then task.wait() end
+    end
+end)
 local function scanRigs()
     local remove={}
     for target in pairs(markers) do
@@ -866,7 +893,7 @@ local function scanRigs()
     for _,target in ipairs(remove) do removeMarker(target) end
     if not config.npcESP then return end
     local count=0
-    for _,object in ipairs(workspace:GetDescendants()) do
+    for object in pairs(sceneIndex.humanoids) do
         if object:IsA("Humanoid") and object.Parent and object.Parent:IsA("Model") then
             local model=object.Parent
             if model~=player.Character and not Players:GetPlayerFromCharacter(model)
@@ -875,7 +902,7 @@ local function scanRigs()
                 if not markers[model] then newMarker(model) end
                 if count>=100 then break end
             end
-        end
+        elseif not object.Parent then sceneIndex.humanoids[object]=nil end
     end
 end
 loadingPhase(0.8,"Connecting overlays, radar and scene checks")
@@ -898,7 +925,7 @@ local function previewPoint(position)
 end
 local function updatePreviewSkeleton()
     for _,line in ipairs(previewLines) do line.Visible=false end
-    if not config.skeleton or not clonedCharacter or not window.Visible then return end
+    if not config.skeleton or not clonedCharacter or not window.Visible or not preview.Visible then return end
     local i=0
     for _,motor in ipairs(clonedCharacter:GetDescendants()) do
         if motor:IsA("Motor6D") and motor.Part0 and motor.Part1 and motor.Name~="RootJoint" and motor.Name~="Root" then
@@ -1166,9 +1193,11 @@ local function updateSpecialMarkers()
     local zones=workspace:FindFirstChild("AiZones")
     if zones and (config.minesESP or config.bossTracker) then
         local bosses={Anton=true,Dozer=true,Whisper=true,Death=true,MI24V=true}
-        for _,object in ipairs(zones:GetDescendants()) do
-            if config.minesESP and (object.Name=="PMN2" or object.Name=="MON50") then add(object,"MINE / "..object.Name,Color3.fromRGB(255,92,77)) end
-            if config.bossTracker and bosses[object.Name] and object:IsA("Model") then add(object,"BOSS / "..object.Name,Color3.fromRGB(255,110,67)) end
+        for object in pairs(sceneIndex.special) do
+            if object.Parent and object:IsDescendantOf(zones) then
+                if config.minesESP and (object.Name=="PMN2" or object.Name=="MON50") then add(object,"MINE / "..object.Name,Color3.fromRGB(255,92,77)) end
+                if config.bossTracker and bosses[object.Name] and object:IsA("Model") then add(object,"BOSS / "..object.Name,Color3.fromRGB(255,110,67)) end
+            elseif not object.Parent then sceneIndex.special[object]=nil end
         end
     end
     for object,record in pairs(extraState.markers) do
@@ -1394,8 +1423,12 @@ env.DirectLiteCleanup=cleanup
 connect(close.Activated,cleanup)
 rebuildPreview()
 local timer,previewTimer,rigTimer=0,0,3
+local overlayElapsed=0
 connect(RunService.RenderStepped,function(dt)
     if not alive then return end
+    overlayElapsed=overlayElapsed+dt
+    if overlayElapsed<1/30 then return end
+    dt=overlayElapsed; overlayElapsed=0
     local camera=workspace.CurrentCamera
     if not camera then return end
     scale.Scale=math.max(0.1,math.min(config.menuScale/100,(camera.ViewportSize.X-24)/980,(camera.ViewportSize.Y-24)/620))
@@ -1472,7 +1505,13 @@ connect(RunService.RenderStepped,function(dt)
                     m.label.Text=(config.names and name.."\n"..details or "")..(config.names and weapon~="" and " / " or "")..weapon
                     if config.skeleton then
                         local i=0
-                        for _,motor in ipairs(character:GetDescendants()) do
+                        if m.skeletonCharacter~=character then
+                            m.skeletonCharacter=character; m.motors={}
+                            for _,motor in ipairs(character:GetDescendants()) do
+                                if motor:IsA("Motor6D") then table.insert(m.motors,motor) end
+                            end
+                        end
+                        for _,motor in ipairs(m.motors) do
                             if motor:IsA("Motor6D") and motor.Part0 and motor.Part1 and motor.Name~="RootJoint" and motor.Name~="Root" then
                                 local a,av=camera:WorldToViewportPoint(motor.Part0.Position)
                                 local b,bv=camera:WorldToViewportPoint(motor.Part1.Position)
@@ -1510,12 +1549,14 @@ connect(RunService.RenderStepped,function(dt)
                     local toward=me.Position-head.Position
                     local facing= toward.Magnitude>0.001 and head.CFrame.LookVector:Dot(toward.Unit)>=math.cos(math.rad(config.threatAngle))
                     local visible=false
-                    if facing then
+                    if facing and config.threatLines and (not m.sightTime or os.clock()-m.sightTime>=0.2) then
                         local params=RaycastParams.new()
                         params.FilterType=Enum.RaycastFilterType.Exclude
                         params.FilterDescendantsInstances={character,camera}
                         local hit=workspace:Raycast(head.Position,toward,params)
                         visible=not hit or hit.Instance:IsDescendantOf(player.Character)
+                        m.sightTime=os.clock(); m.sightVisible=visible
+                    elseif facing then visible=m.sightVisible or false
                     end
                     local danger=facing and visible
                     m.dot.BackgroundColor3=danger and Color3.fromRGB(255,76,90) or cyan
@@ -1539,13 +1580,14 @@ connect(RunService.RenderStepped,function(dt)
     if rigTimer>=3 then rigTimer=0; scanRigs(); updateSpecialMarkers() end
     if timer>=1 then
         timer=0
-        updateInventory(); updateLoot(); checkModerators(); updateExtra()
+        if inventoryPanel.Visible or window.Visible and inventory.Visible then updateInventory() end
+        updateLoot(); checkModerators(); updateExtra()
     end
-    if previewTimer>=2 and window.Visible then previewTimer=0; rebuildPreview() end
+    if previewTimer>=5 and window.Visible and preview.Visible then previewTimer=0; rebuildPreview() end
     previewStroke.Enabled=config.previewBox
     previewName.Text=selected and selected.DisplayName or "No player"
-    if selected and sourceCharacter~=selected.Character then rebuildPreview() end
-    if clonedCharacter and window.Visible then
+    if window.Visible and preview.Visible and selected and sourceCharacter~=selected.Character then rebuildPreview() end
+    if clonedCharacter and window.Visible and preview.Visible then
         if lastTint~=config.previewTint then
             for part,original in pairs(originals) do
                 if part.Parent then
