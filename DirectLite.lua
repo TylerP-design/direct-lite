@@ -27,7 +27,7 @@ local config = {esp=true, boxes=true, names=true, skeleton=false, chams=false,
     zoom=false, zoomFov=35, alwaysDay=false, noFog=false, fullbright=false,
     lootContainers=false, lootCashRegister=true, lootFilingCabinet=true,
     lootFridge=true, lootGrenadeCrate=true, lootHiddenCache=true,
-    radarAutoRange=true,radarNames=true,nameHealth=true}
+    radarAutoRange=true,radarNames=true,nameHealth=true,silentHeadLine=true}
 local cyan = Color3.fromRGB(56, 191, 255)
 local muted = Color3.fromRGB(143, 159, 186)
 local sectionTargets={}
@@ -91,7 +91,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.8.2    /    DIRECT LITE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
+text(top,"0.8.3    /    DIRECT LITE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -99,7 +99,7 @@ connect(reopen.Activated,function() window.Visible = not window.Visible end)
 local sidebar=make("Frame",window,{Position=UDim2.fromOffset(0,60),Size=UDim2.new(0,155,1,-60),
     BackgroundColor3=Color3.fromRGB(11,21,37),BorderSizePixel=0})
 text(sidebar,"WORKSPACE",UDim2.fromOffset(18,16),UDim2.fromOffset(120,25),muted,10)
-text(sidebar,"DIRECT LITE / 0.8.2",UDim2.new(0,12,1,-25),UDim2.fromOffset(131,20),muted,9)
+text(sidebar,"DIRECT LITE / 0.8.3",UDim2.new(0,12,1,-25),UDim2.fromOffset(131,20),muted,9)
 local sceneStatus=text(sidebar,"Checking scene...",UDim2.fromOffset(12,478),UDim2.fromOffset(131,48),muted,10)
 sceneStatus.TextWrapped=true
 local pageTitle=text(window,"Aim",UDim2.fromOffset(175,65),UDim2.fromOffset(650,30),nil,21)
@@ -256,6 +256,7 @@ inspectorText.TextYAlignment=Enum.TextYAlignment.Top
 heading(combat,"AIM / SILENT AIM")
 toggle(combat,"Aimbot (camera aim)","aimbot")
 toggle(combat,"Silent aim (takes priority over camera aim)","silentAim")
+toggle(combat,"Silent target line to head","silentHeadLine")
 toggle(combat,"Hold right mouse to activate","aimHold")
 heading(combat,"TARGET FILTERS")
 toggle(combat,"Visibility check","aimVisible")
@@ -992,6 +993,11 @@ local aimCircleFrame=make("Frame",overlay,{AnchorPoint=Vector2.new(0.5,0.5),
     BackgroundTransparency=1,Visible=false})
 make("UICorner",aimCircleFrame,{CornerRadius=UDim.new(0.5,0)})
 make("UIStroke",aimCircleFrame,{Color=cyan,Thickness=1,Transparency=0.4})
+local silentLine=make("Frame",overlay,{AnchorPoint=Vector2.new(0.5,0.5),
+    BackgroundColor3=cyan,BorderSizePixel=0,Visible=false})
+local silentHeadDot=make("Frame",overlay,{AnchorPoint=Vector2.new(0.5,0.5),
+    Size=UDim2.fromOffset(6,6),BackgroundColor3=cyan,BorderSizePixel=0,Visible=false})
+round(silentHeadDot,3)
 local function restoreRecoil()
     for ammo,snapshot in pairs(recoilOriginals) do
         if ammo.Parent and ammo:GetAttribute("RecoilStrength")==0 then
@@ -1328,6 +1334,7 @@ connect(Players.PlayerRemoving,function(target) alerted[target.UserId]=nil end)
 local bindName="DirectLiteCombat"
 local function updateCombat(dt)
     if not alive then return end
+    silentLine.Visible=false; silentHeadDot.Visible=false
     local camera=workspace.CurrentCamera
     if not camera then return end
     if config.fovOverride or config.zoom then
@@ -1367,6 +1374,19 @@ local function updateCombat(dt)
     end
     local target,part=aimTarget(camera)
     if not part then releaseViewmodel(); combatStatus.Text=recoilText.."\nNo eligible target inside FOV"; return end
+    if config.silentAim and config.silentHeadLine then
+        local head=target.Character and target.Character:FindFirstChild("Head")
+        if head then
+            local p,onScreen=camera:WorldToViewportPoint(head.Position)
+            if onScreen and p.Z>0 then
+                local color=Color3.fromRGB(config.espRed,config.espGreen,config.espBlue)
+                silentLine.BackgroundColor3=color; silentHeadDot.BackgroundColor3=color
+                drawLine(silentLine,camera.ViewportSize/2,Vector2.new(p.X,p.Y))
+                silentHeadDot.Position=UDim2.fromOffset(p.X,p.Y)
+                silentHeadDot.Visible=true
+            end
+        end
+    end
     if config.silentAim then
         local model=camera:FindFirstChild("ViewModel")
         if not model then
