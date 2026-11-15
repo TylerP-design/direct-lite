@@ -1,4 +1,4 @@
--- Direct Lite 0.9: three-second intro, explicit game-profile chooser and separate settings.
+-- Direct Lite 0.9.1: profile-exclusive Arsenal fly and BedWars client hitbox controls.
 -- No external loaders, requests, game remotes, license code or telemetry.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -27,7 +27,8 @@ local config = {esp=true, boxes=true, names=true, skeleton=false, chams=false,
     zoom=false, zoomFov=35, alwaysDay=false, noFog=false, fullbright=false,
     lootContainers=false, lootCashRegister=true, lootFilingCabinet=true,
     lootFridge=true, lootGrenadeCrate=true, lootHiddenCache=true,
-    radarAutoRange=true,radarNames=true,nameHealth=true,silentHeadLine=true}
+    radarAutoRange=true,radarNames=true,nameHealth=true,silentHeadLine=true,
+    arsenalFly=false,arsenalFlySpeed=45,bedwarsHitboxes=false,bedwarsHitboxSize=6}
 local cyan = Color3.fromRGB(56, 191, 255)
 local muted = Color3.fromRGB(143, 159, 186)
 local sectionTargets={}
@@ -114,7 +115,7 @@ pickerTitle.ZIndex=104
 local cancelPicker=button(profilePicker,"X",UDim2.new(1,-43,0,12),UDim2.fromOffset(30,27))
 cancelPicker.ZIndex=105
 connect(cancelPicker.Activated,function() if env.DirectLiteCleanup then env.DirectLiteCleanup() end end)
-local pickerHint=text(profilePicker,"Project Delta tools + shared profiles. Select to open settings.",UDim2.fromOffset(20,53),UDim2.new(1,-40,0,32),muted,11)
+local pickerHint=text(profilePicker,"Choose a game to open its available tools and saved settings.",UDim2.fromOffset(20,53),UDim2.new(1,-40,0,32),muted,11)
 pickerHint.ZIndex=104
 local choiceSent=false
 for i,name in ipairs(profiles) do
@@ -122,7 +123,7 @@ for i,name in ipairs(profiles) do
     local line=math.floor((i-1)/2)
     local b=button(profilePicker,name,UDim2.fromOffset(20+column*275,100+line*76),UDim2.fromOffset(265,62))
     b.ZIndex=104
-    local sub=text(b,name=="Project Delta" and "Current integrated tools" or "Shared controls / specific module not installed",UDim2.fromOffset(8,37),UDim2.new(1,-16,0,17),muted,9)
+    local sub=text(b,name=="Project Delta" and "Current integrated tools" or name=="Arsenal" and "Fly + common controls / live test needed" or name=="BedWars" and "Client hitboxes / aura module not installed" or "Shared controls / specific module not installed",UDim2.fromOffset(8,37),UDim2.new(1,-16,0,17),muted,9)
     sub.ZIndex=105
     connect(b.Activated,function() if not choiceSent then choiceSent=true; profileChoice:Fire(name) end end)
 end
@@ -135,6 +136,8 @@ loadingTitle.Visible=true; loadingStatus.Visible=true; loadingTrack.Visible=true
 isDelta=selectedProfile=="Project Delta"
 settingsFile="DirectLite."..selectedProfile:gsub("[^%w]","")..".settings.json"
 enforceProfile=function()
+    if selectedProfile~="Arsenal" then config.arsenalFly=false end
+    if selectedProfile~="BedWars" then config.bedwarsHitboxes=false end
     if isDelta then return end
     config.silentAim=false; config.noRecoil=false; config.loot=false; config.lootContainers=false
     config.corpseESP=false; config.minesESP=false; config.bossTracker=false; config.noVisorFlash=false
@@ -154,7 +157,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.9 / "..selectedProfile,UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
+text(top,"0.9.1 / "..selectedProfile,UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -162,7 +165,7 @@ connect(reopen.Activated,function() window.Visible = not window.Visible end)
 local sidebar=make("Frame",window,{Position=UDim2.fromOffset(0,60),Size=UDim2.new(0,155,1,-60),
     BackgroundColor3=Color3.fromRGB(11,21,37),BorderSizePixel=0})
 text(sidebar,"WORKSPACE",UDim2.fromOffset(18,16),UDim2.fromOffset(120,25),muted,10)
-text(sidebar,"DIRECT LITE / 0.9",UDim2.new(0,12,1,-25),UDim2.fromOffset(131,20),muted,9)
+text(sidebar,"DIRECT LITE / 0.9.1",UDim2.new(0,12,1,-25),UDim2.fromOffset(131,20),muted,9)
 local sceneStatus=text(sidebar,"Checking scene...",UDim2.fromOffset(12,478),UDim2.fromOffset(131,48),muted,10)
 sceneStatus.TextWrapped=true
 local pageTitle=text(window,"Aim",UDim2.fromOffset(175,65),UDim2.fromOffset(650,30),nil,21)
@@ -319,7 +322,7 @@ local inspectorInfo=row(home,118)
 local inspectorText=text(inspectorInfo,"Hold I while looking near a player to inspect their items. Release I to close.\nHover a tile for its name.\nRight Shift: show / hide menu.\nScene status shows actual loaded targets.",UDim2.fromOffset(8,5),UDim2.new(1,-16,1,-10),muted,11)
 inspectorText.TextWrapped=true
 inspectorText.TextYAlignment=Enum.TextYAlignment.Top
-if not isDelta then inspectorText.Text="Shared player visuals, radar, camera and world controls. Dedicated features for "..selectedProfile.." are not installed. Project Delta-only controls are disabled. Settings save separately for this profile." end
+if not isDelta then inspectorText.Text=selectedProfile=="Arsenal" and "Arsenal profile: Fly controls are in Movement. Common visuals and camera controls are available. Live-game compatibility is unverified. Separate saved settings." or selectedProfile=="BedWars" and "BedWars profile: client hitbox controls are in Aim. Server-side hit registration is unverified. Hit aura is not installed. Separate saved settings." or "Shared player visuals, radar, camera and world controls. Dedicated features for "..selectedProfile.." are not installed. Project Delta-only controls are disabled. Settings save separately for this profile." end
 heading(combat,"AIM / SILENT AIM")
 toggle(combat,"Aimbot (camera aim)","aimbot")
 toggle(combat,"Silent aim (takes priority over camera aim)","silentAim")
@@ -413,6 +416,19 @@ slider(settings,"Menu scale (%)","menuScale",50,150)
 heading(movement,"WALL CLIMB")
 toggle(movement,"Wall climb: hold W + Space near wall","climb")
 slider(movement,"Climb speed (studs / second)","climbSpeed",5,50)
+if selectedProfile=="Arsenal" then
+    heading(movement,"ARSENAL / FLY")
+    toggle(movement,"Fly (WASD / Space up / Ctrl down)","arsenalFly")
+    slider(movement,"Fly speed","arsenalFlySpeed",10,100)
+elseif selectedProfile=="BedWars" then
+    heading(combat,"BEDWARS / HITBOXES")
+    toggle(combat,"Client hitbox size override","bedwarsHitboxes")
+    slider(combat,"Hitbox size (studs)","bedwarsHitboxSize",2,12)
+    heading(combat,"BEDWARS / HIT AURA")
+    local note=row(combat,80)
+    local label=text(note,"Hit aura requires a compatible BedWars combat module. It is not installed; there is no active aura toggle.",UDim2.fromOffset(8,4),UDim2.new(1,-16,1,-8),muted,11)
+    label.TextWrapped=true
+end
 heading(movement,"MOVEMENT")
 toggle(movement,"Fast run","fastRun")
 slider(movement,"Run speed","runSpeed",16,40)
@@ -500,6 +516,8 @@ connect(load.Activated,function()
     config.espBlue=math.clamp(config.espBlue,0,255)
     config.runSpeed=math.clamp(config.runSpeed,16,40)
     config.zoomFov=math.clamp(config.zoomFov,15,60)
+    config.arsenalFlySpeed=math.clamp(config.arsenalFlySpeed,10,100)
+    config.bedwarsHitboxSize=math.clamp(config.bedwarsHitboxSize,2,12)
     enforceProfile()
     for _,refresh in ipairs(refreshControls) do refresh() end
     notice.Text="Settings loaded."
@@ -1401,8 +1419,85 @@ connect(scanStaff.Activated,function() roleCache={}; alerted={}; checkModerators
 connect(Players.PlayerAdded,function() task.defer(function() if alive then checkModerators() end end) end)
 connect(Players.PlayerRemoving,function(target) alerted[target.UserId]=nil end)
 local bindName="DirectLiteCombat"
+local gameModule={}
+do
+    local state={fly=nil,boxes={},timer=0}
+    local function stopFly()
+        local fly=state.fly
+        if not fly then return end
+        fly.velocity:Destroy(); fly.orientation:Destroy(); fly.attachment:Destroy()
+        if fly.humanoid.Parent then fly.humanoid.PlatformStand=fly.platform; fly.humanoid.AutoRotate=fly.rotate end
+        if fly.root.Parent then fly.root.AssemblyLinearVelocity=Vector3.new(0,0,0) end
+        state.fly=nil
+    end
+    local function restoreBoxes()
+        for part,original in pairs(state.boxes) do
+            if part.Parent then
+                part.Size=original.size; part.Transparency=original.transparency
+                part.CanCollide=original.collide; part.Massless=original.massless
+            end
+            state.boxes[part]=nil
+        end
+    end
+    function gameModule.cleanup() stopFly(); restoreBoxes() end
+    function gameModule.update(dt)
+        if selectedProfile=="Arsenal" and config.arsenalFly then
+            local character=player.Character
+            local root=rootPart(character)
+            local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+            local camera=workspace.CurrentCamera
+            if not root or not humanoid or humanoid.Health<=0 or not camera then stopFly(); return end
+            if state.fly and state.fly.root~=root then stopFly() end
+            if not state.fly then
+                local attachment=make("Attachment",root,{Name="DirectLiteFlyAttachment"})
+                local velocity=make("LinearVelocity",root,{Attachment0=attachment,RelativeTo=Enum.ActuatorRelativeTo.World,
+                    ForceLimitsEnabled=false,VectorVelocity=Vector3.new(0,0,0)})
+                local orientation=make("AlignOrientation",root,{Attachment0=attachment,Mode=Enum.OrientationAlignmentMode.OneAttachment,
+                    MaxTorque=math.huge,Responsiveness=25})
+                state.fly={root=root,humanoid=humanoid,attachment=attachment,velocity=velocity,orientation=orientation,
+                    platform=humanoid.PlatformStand,rotate=humanoid.AutoRotate}
+                humanoid.PlatformStand=true; humanoid.AutoRotate=false
+            end
+            local direction=Vector3.new(0,0,0)
+            if not UIS:GetFocusedTextBox() then
+                if UIS:IsKeyDown(Enum.KeyCode.W) then direction=direction+camera.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.S) then direction=direction-camera.CFrame.LookVector end
+                if UIS:IsKeyDown(Enum.KeyCode.D) then direction=direction+camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.A) then direction=direction-camera.CFrame.RightVector end
+                if UIS:IsKeyDown(Enum.KeyCode.Space) then direction=direction+Vector3.new(0,1,0) end
+                if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then direction=direction-Vector3.new(0,1,0) end
+            end
+            state.fly.velocity.VectorVelocity=direction.Magnitude>0 and direction.Unit*config.arsenalFlySpeed or direction
+            state.fly.orientation.CFrame=camera.CFrame.Rotation
+        else stopFly() end
+        state.timer=state.timer+dt
+        if selectedProfile=="BedWars" and config.bedwarsHitboxes then
+            if state.timer<0.2 then return end
+            state.timer=0
+            local active={}
+            for _,target in ipairs(Players:GetPlayers()) do
+                local character=target.Character
+                local root=character and character:FindFirstChild("HumanoidRootPart")
+                local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+                if target~=player and not teammate(target) and root and humanoid and humanoid.Health>0 then
+                    active[root]=true
+                    if not state.boxes[root] then state.boxes[root]={size=root.Size,transparency=root.Transparency,collide=root.CanCollide,massless=root.Massless} end
+                    root.Size=Vector3.new(config.bedwarsHitboxSize,config.bedwarsHitboxSize,config.bedwarsHitboxSize)
+                    root.Transparency=0.65; root.CanCollide=false; root.Massless=true
+                end
+            end
+            for part,original in pairs(state.boxes) do
+                if not active[part] then
+                    if part.Parent then part.Size=original.size; part.Transparency=original.transparency; part.CanCollide=original.collide; part.Massless=original.massless end
+                    state.boxes[part]=nil
+                end
+            end
+        elseif next(state.boxes) then restoreBoxes() end
+    end
+end
 local function updateCombat(dt)
     if not alive then return end
+    gameModule.update(dt)
     silentLine.Visible=false; silentHeadDot.Visible=false
     local camera=workspace.CurrentCamera
     if not camera then return end
@@ -1529,6 +1624,7 @@ local function cleanup()
     restoreRecoil()
     restoreFov()
     restoreExtra()
+    gameModule.cleanup()
     releaseViewmodel()
     for _,connection in ipairs(connections) do connection:Disconnect() end
     local list={}
@@ -1694,7 +1790,7 @@ connect(RunService.RenderStepped,function(dt)
         end
     end
     sceneStatus.Text=math.max(0,#Players:GetPlayers()-1).." other players\n"..loadedCount.." loaded targets in range"
-    homeStatus.Text=selectedProfile..(isDelta and " / integrated tools" or " / shared controls only").."\nOther players: "..math.max(0,#Players:GetPlayers()-1).."\nLoaded targets in range: "..loadedCount
+    homeStatus.Text=selectedProfile..(isDelta and " / integrated tools" or (selectedProfile=="Arsenal" or selectedProfile=="BedWars") and " / profile-specific controls" or " / shared controls only").."\nOther players: "..math.max(0,#Players:GetPlayers()-1).."\nLoaded targets in range: "..loadedCount
         .."\nInspecting: @"..(selected and selected.Name or "none")
         .."\nIf an inventory is unavailable, that data is not exposed to this client."
     if rosterState.dirty then rosterState.dirty=false; updateInventory() end
