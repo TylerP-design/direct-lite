@@ -21,7 +21,7 @@ local config = {esp=false, boxes=true, names=true, skeleton=false, chams=false,
     threatAngle=25, climb=false, climbSpeed=22, fovOverride=false, cameraFov=70,
     modAlerts=true, modNames="", radarRotate=true, lineThickness=2,
     healthBar=true, espRed=56, espGreen=191, espBlue=255,
-    modGroup="", modRoles="owner,admin,administrator,moderator,head moderator,staff"}
+    modGroup="3765739", modRoles="moderator,head moderator,admin,developer,lead developer"}
 local cyan = Color3.fromRGB(56, 191, 255)
 local muted = Color3.fromRGB(143, 159, 186)
 local sectionTargets={}
@@ -68,7 +68,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.6    /    PRIVATE WORKSPACE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
+text(top,"0.6.1    /    PRIVATE WORKSPACE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -76,7 +76,7 @@ connect(reopen.Activated,function() window.Visible = not window.Visible end)
 local sidebar=make("Frame",window,{Position=UDim2.fromOffset(0,60),Size=UDim2.new(0,155,1,-60),
     BackgroundColor3=Color3.fromRGB(11,21,37),BorderSizePixel=0})
 text(sidebar,"WORKSPACE",UDim2.fromOffset(18,16),UDim2.fromOffset(120,25),muted,10)
-text(sidebar,"DIRECT LITE\nCLIENT 0.6",UDim2.new(0,18,1,-65),UDim2.fromOffset(120,45),muted,10)
+text(sidebar,"DIRECT LITE\nCLIENT 0.6.1",UDim2.new(0,18,1,-65),UDim2.fromOffset(120,45),muted,10)
 local pageTitle=text(window,"Aim",UDim2.fromOffset(175,65),UDim2.fromOffset(650,30),nil,21)
 local content = make("Frame",window,{Position=UDim2.fromOffset(175,108),
     Size=UDim2.fromOffset(787,488),BackgroundTransparency=1})
