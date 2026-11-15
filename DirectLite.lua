@@ -1,4 +1,4 @@
--- Direct Lite 0.2: adjustable visuals, replicated inventory and character preview.
+-- Direct Lite 0.3: adjustable visuals, inventory, preview and combat controls.
 -- No external loaders, requests, game remotes, license code or telemetry.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -14,7 +14,10 @@ local alive = true
 local config = {esp=false, boxes=true, names=true, skeleton=false, chams=false,
     radar=false, loot=false, maxDistance=1500, radarRange=250,
     fullInventory=true, previewBox=true, previewTint=true, rotation=0,
-    menuScale=100, radarSize=178, radarWeapons=true, weaponLabels=true, labelSize=12}
+    menuScale=100, radarSize=178, radarWeapons=true, weaponLabels=true, labelSize=12,
+    aimbot=false, silentAim=false, noRecoil=false, aimHold=true, aimVisible=true,
+    aimTeamCheck=false, aimBody=false, aimFov=120, aimSmooth=6, aimCircle=true,
+    silentChance=100, perfectSilent=false}
 local cyan = Color3.fromRGB(56, 191, 255)
 local muted = Color3.fromRGB(143, 159, 186)
 local function connect(signal, callback)
@@ -59,7 +62,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.2  /  VISUALS + INVENTORY",UDim2.fromOffset(183,6),UDim2.fromOffset(300,40),muted,11)
+text(top,"0.3  /  DIRECT LITE",UDim2.fromOffset(183,6),UDim2.fromOffset(300,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -78,9 +81,10 @@ local function page(name)
     return p
 end
 local visuals, inventory, settings = page("Visuals"),page("Inventory"),page("Settings")
+local combat=page("Combat")
 local tabs={}
-for i,name in ipairs({"Visuals","Inventory","Settings"}) do
-    local b=button(window,name,UDim2.fromOffset(18+(i-1)*160,69),UDim2.fromOffset(151,28))
+for i,name in ipairs({"Combat","Visuals","Inventory","Settings"}) do
+    local b=button(window,name,UDim2.fromOffset(18+(i-1)*120,69),UDim2.fromOffset(111,28))
     tabs[name]=b
     connect(b.Activated,function()
         for key,p in pairs(pages) do
@@ -89,8 +93,8 @@ for i,name in ipairs({"Visuals","Inventory","Settings"}) do
         end
     end)
 end
-visuals.Visible=true
-tabs.Visuals.BackgroundColor3=Color3.fromRGB(24,67,103)
+combat.Visible=true
+tabs.Combat.BackgroundColor3=Color3.fromRGB(24,67,103)
 local order=0
 local refreshControls={}
 local function row(parent,height)
@@ -150,6 +154,24 @@ local function slider(parent,label,key,low,high)
     table.insert(refreshControls,refresh)
     refresh()
 end
+heading(combat,"AIM / SILENT AIM")
+toggle(combat,"Aimbot (camera aim)","aimbot")
+toggle(combat,"Silent aim (takes priority over camera aim)","silentAim")
+toggle(combat,"Hold right mouse to activate","aimHold")
+toggle(combat,"Visibility check","aimVisible")
+toggle(combat,"Skip teammates / same clan","aimTeamCheck")
+toggle(combat,"Aim at torso instead of head","aimBody")
+toggle(combat,"Show FOV circle","aimCircle")
+slider(combat,"FOV radius (pixels)","aimFov",20,500)
+slider(combat,"Camera smoothing (1 = instant)","aimSmooth",1,20)
+slider(combat,"Silent hit chance (%)","silentChance",0,100)
+toggle(combat,"Silent aim: attachment-point variant","perfectSilent")
+heading(combat,"WEAPON")
+toggle(combat,"No recoil","noRecoil")
+local combatStatusRow=row(combat,65)
+local combatStatus=text(combatStatusRow,"Combat is off",UDim2.fromOffset(10,5),UDim2.new(1,-20,1,-10),muted,11)
+combatStatus.TextWrapped=true
+combatStatus.TextYAlignment=Enum.TextYAlignment.Top
 heading(visuals,"PLAYER OVERLAY")
 toggle(visuals,"Player ESP", "esp")
 toggle(visuals,"Bounding boxes", "boxes")
@@ -218,6 +240,9 @@ connect(load.Activated,function()
     config.menuScale=math.clamp(config.menuScale,50,150)
     config.radarSize=math.clamp(config.radarSize,120,500)
     config.labelSize=math.clamp(config.labelSize,10,20)
+    config.aimFov=math.clamp(config.aimFov,20,500)
+    config.aimSmooth=math.clamp(config.aimSmooth,1,20)
+    config.silentChance=math.clamp(config.silentChance,0,100)
     for _,refresh in ipairs(refreshControls) do refresh() end
     notice.Text="Settings loaded."
 end)
@@ -444,6 +469,146 @@ local function updateLoot()
     end
 end
 local dragging,dragStart,originalPosition=false,nil,nil
+-- Combat adaptation: ammo attributes, camera steering and viewmodel orientation.
+-- Does not send remotes, install hooks or run the supplied loader.
+local recoilOriginals={}
+local recoilTimer=0
+local viewPart,viewOffset=nil,nil
+local aimCircleFrame=make("Frame",overlay,{AnchorPoint=Vector2.new(0.5,0.5),
+    BackgroundTransparency=1,Visible=false})
+make("UICorner",aimCircleFrame,{CornerRadius=UDim.new(0.5,0)})
+make("UIStroke",aimCircleFrame,{Color=cyan,Thickness=1,Transparency=0.4})
+local function restoreRecoil()
+    for ammo,snapshot in pairs(recoilOriginals) do
+        if ammo.Parent and ammo:GetAttribute("RecoilStrength")==0 then
+            ammo:SetAttribute("RecoilStrength",snapshot.value)
+        end
+        recoilOriginals[ammo]=nil
+    end
+end
+local function applyRecoil()
+    local ammoTypes=RS:FindFirstChild("AmmoTypes")
+    if not ammoTypes then return 0 end
+    local count=0
+    for _,ammo in ipairs(ammoTypes:GetChildren()) do
+        local strength=ammo:GetAttribute("RecoilStrength")
+        if type(strength)=="number" then
+            if not recoilOriginals[ammo] then recoilOriginals[ammo]={value=strength} end
+            ammo:SetAttribute("RecoilStrength",0)
+            count=count+1
+        end
+    end
+    return count
+end
+local function releaseViewmodel()
+    if viewPart and viewPart.Parent and viewOffset and workspace.CurrentCamera then
+        viewPart.CFrame=workspace.CurrentCamera.CFrame*viewOffset
+    end
+    viewPart=nil; viewOffset=nil
+end
+local function clan(target)
+    local folder=RS:FindFirstChild("Players")
+    local entry=folder and folder:FindFirstChild(target.Name)
+    local s=entry and entry:FindFirstChild("Status")
+    local journey=s and s:FindFirstChild("Journey")
+    local group=journey and journey:FindFirstChild("Clan")
+    local name=group and group:GetAttribute("CurrentClan")
+    return name and tostring(name)~="nil" and tostring(name)~="" and tostring(name) or nil
+end
+local function teammate(target)
+    if player.Team and target.Team==player.Team and not player.Neutral and not target.Neutral then return true end
+    local a,b=clan(player),clan(target)
+    return a~=nil and b~=nil and a==b
+end
+local function aimTarget(camera)
+    local best,bestPart=nil,nil
+    local closest=config.aimFov
+    local center=camera.ViewportSize/2
+    local myRoot=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil,nil end
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances={player.Character,camera}
+    for _,target in ipairs(Players:GetPlayers()) do
+        if target~=player and not (config.aimTeamCheck and teammate(target)) then
+            local character=target.Character
+            local humanoid=character and character:FindFirstChildOfClass("Humanoid")
+            local part=character and (config.aimBody and
+                (character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso") or character:FindFirstChild("HumanoidRootPart"))
+                or character:FindFirstChild("Head"))
+            if part and part:IsA("BasePart") and humanoid and humanoid.Health>0 and (part.Position-myRoot.Position).Magnitude<=config.maxDistance then
+                local point,onScreen=camera:WorldToViewportPoint(part.Position)
+                if onScreen and point.Z>0 then
+                    local delta=(Vector2.new(point.X,point.Y)-center).Magnitude
+                    if delta<closest then
+                        local hit=nil
+                        if config.aimVisible then hit=workspace:Raycast(camera.CFrame.Position,part.Position-camera.CFrame.Position,params) end
+                        if not hit or hit.Instance:IsDescendantOf(character) then best=target; bestPart=part; closest=delta end
+                    end
+                end
+            end
+        end
+    end
+    return best,bestPart
+end
+local recoilCount=0
+local wasNoRecoil=false
+local bindName="DirectLiteCombat"
+local function updateCombat(dt)
+    if not alive then return end
+    local camera=workspace.CurrentCamera
+    if not camera then return end
+    recoilTimer=recoilTimer+dt
+    if config.noRecoil then
+        if not wasNoRecoil or recoilTimer>=0.5 then recoilTimer=0; recoilCount=applyRecoil() end
+    elseif wasNoRecoil then restoreRecoil(); recoilCount=0 end
+    wasNoRecoil=config.noRecoil
+    aimCircleFrame.Position=UDim2.fromOffset(camera.ViewportSize.X/2,camera.ViewportSize.Y/2)
+    aimCircleFrame.Size=UDim2.fromOffset(config.aimFov*2,config.aimFov*2)
+    aimCircleFrame.Visible=config.aimCircle and (config.aimbot or config.silentAim)
+    local recoilText=config.noRecoil and ("Recoil: "..recoilCount.." ammo types updated") or "Recoil: off"
+    local active=(config.aimbot or config.silentAim) and not UIS:GetFocusedTextBox()
+        and (not config.aimHold or UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2))
+    if not active then
+        releaseViewmodel()
+        combatStatus.Text=recoilText.."\n"..((config.aimbot or config.silentAim) and "Hold right mouse to aim" or "Aim: off")
+        return
+    end
+    local target,part=aimTarget(camera)
+    if not part then releaseViewmodel(); combatStatus.Text=recoilText.."\nNo eligible target inside FOV"; return end
+    if config.silentAim then
+        local model=camera:FindFirstChild("ViewModel")
+        local root=nil
+        if model and config.perfectSilent then
+            local item=model:FindFirstChild("Item")
+            local points=item and item:FindFirstChild("AttachmentPoints")
+            root=points and points:FindFirstChild("Extra")
+        elseif model then root=model:FindFirstChild("HumanoidRootPart") end
+        if not root or not root:IsA("BasePart") then
+            releaseViewmodel()
+            combatStatus.Text=recoilText.."\nSilent aim: expected viewmodel part is unavailable"
+            return
+        end
+        if viewPart~=root then releaseViewmodel(); viewPart=root; viewOffset=camera.CFrame:ToObjectSpace(root.CFrame) end
+        if math.random()*100<config.silentChance then
+            local offset=config.perfectSilent and 0.15 or 1.75
+            local position=part.Position-Vector3.new(0,offset,0)
+            if (root.Position-position).Magnitude>0.001 then root.CFrame=CFrame.lookAt(root.Position,position) end
+        else
+            releaseViewmodel()
+        end
+        combatStatus.Text=recoilText.."\nSilent aim: "..target.DisplayName
+    else
+        releaseViewmodel()
+        local position=camera.CFrame.Position
+        if (position-part.Position).Magnitude>0.001 then
+            local alpha=config.aimSmooth<=1 and 1 or 1-(1-1/config.aimSmooth)^(dt*60)
+            camera.CFrame=camera.CFrame:Lerp(CFrame.lookAt(position,part.Position),alpha)
+        end
+        combatStatus.Text=recoilText.."\nCamera aim: "..target.DisplayName
+    end
+end
+RunService:BindToRenderStep(bindName,Enum.RenderPriority.Camera.Value+1,updateCombat)
 connect(top.InputBegan,function(input)
     if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
         dragging=true; dragStart=input.Position; originalPosition=window.Position
@@ -465,6 +630,9 @@ end)
 local function cleanup()
     if not alive then return end
     alive=false
+    RunService:UnbindFromRenderStep(bindName)
+    restoreRecoil()
+    releaseViewmodel()
     for _,connection in ipairs(connections) do connection:Disconnect() end
     local list={}
     for target in pairs(markers) do table.insert(list,target) end
