@@ -1,4 +1,4 @@
--- Direct Lite 0.7: screenshot feature parity, item tiles and reversible controls.
+-- Direct Lite 0.8: player-first inspector, loading stages and scene diagnostics.
 -- No external loaders, requests, game remotes, license code or telemetry.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -11,8 +11,8 @@ local env = (getgenv and getgenv()) or _G
 if env.DirectLiteCleanup then pcall(env.DirectLiteCleanup) end
 local connections, markers, lootMarkers = {}, {}, {}
 local alive = true
-local config = {esp=false, boxes=true, names=true, skeleton=false, chams=false,
-    radar=false, loot=false, maxDistance=1500, radarRange=250,
+local config = {esp=true, boxes=true, names=true, skeleton=false, chams=false,
+    radar=true, loot=false, maxDistance=3000, radarRange=500,
     fullInventory=true, previewBox=true, previewTint=true, rotation=0,
     menuScale=100, radarSize=230, radarWeapons=false, weaponLabels=false, labelSize=11,
     aimbot=false, silentAim=false, noRecoil=false, aimHold=true, aimVisible=true,
@@ -26,7 +26,8 @@ local config = {esp=false, boxes=true, names=true, skeleton=false, chams=false,
     fastRun=false, runSpeed=24, infiniteJump=false, noVisorFlash=false, statsGui=false,
     zoom=false, zoomFov=35, alwaysDay=false, noFog=false, fullbright=false,
     lootContainers=false, lootCashRegister=true, lootFilingCabinet=true,
-    lootFridge=true, lootGrenadeCrate=true, lootHiddenCache=true}
+    lootFridge=true, lootGrenadeCrate=true, lootHiddenCache=true,
+    radarAutoRange=true,radarNames=true,nameHealth=true}
 local cyan = Color3.fromRGB(56, 191, 255)
 local muted = Color3.fromRGB(143, 159, 186)
 local sectionTargets={}
@@ -62,6 +63,23 @@ local function button(parent, value, position, size)
     round(b,6)
     return b
 end
+local loading=make("Frame",gui,{Size=UDim2.fromScale(1,1),BackgroundColor3=Color3.fromRGB(4,10,20),
+    BackgroundTransparency=0.08,BorderSizePixel=0,ZIndex=100,Active=true})
+local loadingTitle=text(loading,"DIRECT LITE",UDim2.new(0.5,-180,0.5,-65),UDim2.fromOffset(360,45),cyan,30)
+loadingTitle.TextXAlignment=Enum.TextXAlignment.Center; loadingTitle.ZIndex=101
+local loadingStatus=text(loading,"Initializing",UDim2.new(0.5,-200,0.5,-15),UDim2.fromOffset(400,26),muted,13)
+loadingStatus.TextXAlignment=Enum.TextXAlignment.Center; loadingStatus.ZIndex=101
+local loadingTrack=make("Frame",loading,{Position=UDim2.new(0.5,-160,0.5,28),Size=UDim2.fromOffset(320,5),
+    BackgroundColor3=Color3.fromRGB(32,48,69),BorderSizePixel=0,ZIndex=101})
+round(loadingTrack,3)
+local loadingFill=make("Frame",loadingTrack,{Size=UDim2.fromScale(0.05,1),BackgroundColor3=cyan,BorderSizePixel=0,ZIndex=102})
+round(loadingFill,3)
+local function loadingPhase(fraction,label)
+    loadingFill.Size=UDim2.fromScale(fraction,1)
+    loadingStatus.Text=label
+    task.wait()
+end
+loadingPhase(0.1,"Building your workspace")
 local window = make("Frame", gui, {Size=UDim2.fromOffset(980,620),
     Position=UDim2.new(0.5,0,0.5,0), AnchorPoint=Vector2.new(0.5,0.5),
     BackgroundColor3=Color3.fromRGB(9,16,29), BorderSizePixel=0, ZIndex=10})
@@ -73,7 +91,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.7    /    DIRECT LITE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
+text(top,"0.8    /    DIRECT LITE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -81,7 +99,9 @@ connect(reopen.Activated,function() window.Visible = not window.Visible end)
 local sidebar=make("Frame",window,{Position=UDim2.fromOffset(0,60),Size=UDim2.new(0,155,1,-60),
     BackgroundColor3=Color3.fromRGB(11,21,37),BorderSizePixel=0})
 text(sidebar,"WORKSPACE",UDim2.fromOffset(18,16),UDim2.fromOffset(120,25),muted,10)
-text(sidebar,"DIRECT LITE\nCLIENT 0.7",UDim2.new(0,18,1,-55),UDim2.fromOffset(120,40),muted,10)
+text(sidebar,"DIRECT LITE / 0.8",UDim2.new(0,12,1,-25),UDim2.fromOffset(131,20),muted,9)
+local sceneStatus=text(sidebar,"Checking scene...",UDim2.fromOffset(12,478),UDim2.fromOffset(131,48),muted,10)
+sceneStatus.TextWrapped=true
 local pageTitle=text(window,"Aim",UDim2.fromOffset(175,65),UDim2.fromOffset(650,30),nil,21)
 local content = make("Frame",window,{Position=UDim2.fromOffset(175,108),
     Size=UDim2.fromOffset(787,488),BackgroundTransparency=1})
@@ -115,10 +135,11 @@ local weapons=page("Weapons")
 local staff=page("Staff")
 local lootPage=page("Loot")
 local worldPage=page("World")
+local home=page("Home")
 local tabs={}
-for i,name in ipairs({"Combat","Visuals","Loot","Radar","Movement","Weapons","World","Inventory","Staff","Settings"}) do
+for i,name in ipairs({"Home","Combat","Visuals","Loot","Radar","Movement","Weapons","World","Inventory","Staff","Settings"}) do
     local display=({Combat="Aim",Visuals="ESP"})[name] or name
-    local b=button(sidebar,display,UDim2.fromOffset(12,43+(i-1)*43),UDim2.fromOffset(131,35))
+    local b=button(sidebar,display,UDim2.fromOffset(12,43+(i-1)*38),UDim2.fromOffset(131,32))
     tabs[name]=b
     connect(b.Activated,function()
         pageTitle.Text=display
@@ -130,8 +151,9 @@ for i,name in ipairs({"Combat","Visuals","Loot","Radar","Movement","Weapons","Wo
         end
     end)
 end
-combat.Visible=true
-tabs.Combat.BackgroundColor3=Color3.fromRGB(24,67,103)
+home.Visible=true
+pageTitle.Text="Direct Lite / control room"
+tabs.Home.BackgroundColor3=Color3.fromRGB(24,67,103)
 local order=0
 local refreshControls={}
 local function row(parent,height)
@@ -169,7 +191,10 @@ local function toggle(parent,label,key)
     end
     refresh()
     table.insert(refreshControls,refresh)
-    connect(b.Activated,function() config[key]=not config[key]; refresh() end)
+    connect(b.Activated,function()
+        config[key]=not config[key]
+        for _,update in ipairs(refreshControls) do update() end
+    end)
 end
 local function slider(parent,label,key,low,high)
     local r=row(parent,58)
@@ -205,6 +230,29 @@ local function slider(parent,label,key,low,high)
     table.insert(refreshControls,refresh)
     refresh()
 end
+heading(home,"QUICK VISUALS")
+toggle(home,"Player ESP","esp")
+toggle(home,"Player names / distance","names")
+toggle(home,"Health bars","healthBar")
+toggle(home,"Skeleton ESP","skeleton")
+toggle(home,"Radar","radar")
+heading(home,"PROJECT TOOLS")
+toggle(home,"Stats card","statsGui")
+toggle(home,"Staff alerts","modAlerts")
+local homeInfo=row(home,103)
+local homeStatus=text(homeInfo,"Checking loaded players...",UDim2.fromOffset(8,5),UDim2.new(1,-16,1,-10),muted,11)
+homeStatus.TextWrapped=true
+homeStatus.TextYAlignment=Enum.TextYAlignment.Top
+heading(home,"WORLD + CAMERA")
+toggle(home,"Fullbright","fullbright")
+toggle(home,"No fog","noFog")
+toggle(home,"Always day","alwaysDay")
+toggle(home,"Zoom","zoom")
+heading(home,"HOW TO INSPECT")
+local inspectorInfo=row(home,118)
+local inspectorText=text(inspectorInfo,"Inventory: click a player in the roster, then open the side panel.\nI: inspect a nearby crosshair target.\nRight Shift: show / hide menu.\nScene status shows actual loaded targets.",UDim2.fromOffset(8,5),UDim2.new(1,-16,1,-10),muted,11)
+inspectorText.TextWrapped=true
+inspectorText.TextYAlignment=Enum.TextYAlignment.Top
 heading(combat,"AIM / SILENT AIM")
 toggle(combat,"Aimbot (camera aim)","aimbot")
 toggle(combat,"Silent aim (takes priority over camera aim)","silentAim")
@@ -235,6 +283,7 @@ toggle(visuals,"Boss tracker","bossTracker")
 toggle(visuals,"Bounding boxes", "boxes")
 toggle(visuals,"Health bars", "healthBar")
 toggle(visuals,"Player name / distance", "names")
+toggle(visuals,"Health number in name tags","nameHealth")
 toggle(visuals,"Equipped-gun labels", "weaponLabels")
 slider(visuals,"Label text size", "labelSize",10,20)
 toggle(visuals,"Skeleton lines", "skeleton")
@@ -248,6 +297,8 @@ slider(visuals,"Maximum distance (studs)","maxDistance",100,3000)
 heading(radarPage,"TOP-DOWN RADAR")
 toggle(radarPage,"Player radar", "radar")
 toggle(radarPage,"Radar follows camera rotation","radarRotate")
+toggle(radarPage,"Automatically fit loaded targets","radarAutoRange")
+toggle(radarPage,"Names beside radar markers","radarNames")
 slider(radarPage,"Radar range (studs)","radarRange",50,1000)
 slider(radarPage,"Radar size (pixels)","radarSize",120,500)
 heading(radarPage,"SIGHT ESTIMATES")
@@ -403,6 +454,8 @@ viewport.CurrentCamera=previewCamera
 local previewInfo=text(preview,"",UDim2.fromOffset(15,405),UDim2.fromOffset(297,50),cyan,12)
 previewInfo.TextXAlignment=Enum.TextXAlignment.Center
 local selected=player
+local rosterState={signature="",buttons={},dirty=false,manual=false}
+for _,candidate in ipairs(Players:GetPlayers()) do if candidate~=player then selected=candidate; break end end
 local clonedCharacter, sourceCharacter, previewError=nil,nil,""
 local lastTint=nil
 local originals={}
@@ -453,6 +506,7 @@ local function rebuildPreview()
     previewError=""
 end
 local function cycle(direction)
+    rosterState.manual=true
     local list=Players:GetPlayers()
     table.sort(list,function(a,b) return a.Name:lower()<b.Name:lower() end)
     local index=table.find(list,selected) or 1
@@ -465,6 +519,40 @@ local function inventoryRoot(target)
     local container=RS:FindFirstChild("Players")
     local entry=container and container:FindFirstChild(target.Name)
     return entry and entry:FindFirstChild("Inventory")
+end
+loadingPhase(0.55,"Preparing player selection and inventory")
+local roster=row(inventory,150)
+roster.LayoutOrder=5
+local rosterTitle=text(roster,"SELECT A PLAYER",UDim2.fromOffset(8,1),UDim2.new(1,-16,0,24),cyan,10)
+local rosterScroll=make("ScrollingFrame",roster,{Position=UDim2.fromOffset(8,27),Size=UDim2.new(1,-16,1,-35),
+    BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,ScrollBarImageColor3=cyan,
+    CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y})
+make("UIListLayout",rosterScroll,{Padding=UDim.new(0,4),SortOrder=Enum.SortOrder.LayoutOrder})
+connect(Players.PlayerAdded,function(target)
+    if selected==player and not rosterState.manual then selected=target; rosterState.dirty=true; rebuildPreview() end
+end)
+local function rebuildRoster()
+    local list=Players:GetPlayers()
+    table.sort(list,function(a,b) if a==player then return false end; if b==player then return true end; return a.Name:lower()<b.Name:lower() end)
+    local keys={}
+    for _,target in ipairs(list) do table.insert(keys,tostring(target.UserId)) end
+    local signature=table.concat(keys,",")
+    if signature~=rosterState.signature then
+        for _,object in ipairs(rosterState.buttons) do object:Destroy() end
+        rosterState.buttons={}; rosterState.signature=signature
+        for i,target in ipairs(list) do
+            local b=button(rosterScroll,target.DisplayName.." (@"..target.Name..")"..(target==player and " / YOU" or ""),UDim2.new(),UDim2.new(1,-5,0,30))
+            b.LayoutOrder=i; b.TextSize=11
+            table.insert(rosterState.buttons,b)
+            -- This connection belongs to its button, and is destroyed with it.
+            b.Activated:Connect(function() selected=target; rosterState.manual=true; rosterState.dirty=true; rebuildPreview() end)
+        end
+    end
+    for i,target in ipairs(list) do
+        local b=rosterState.buttons[i]
+        if b then b.BackgroundColor3=target==selected and Color3.fromRGB(15,93,141) or Color3.fromRGB(24,38,61) end
+    end
+    rosterTitle.Text="SELECT A PLAYER / "..math.max(0,#list-1).." OTHER PLAYERS"
 end
 -- Independent side panel remains available with the main menu hidden.
 local inventoryPanel=make("Frame",gui,{AnchorPoint=Vector2.new(1,0.5),
@@ -587,7 +675,12 @@ local function syncSideInventory(fullText,fullStatus,entries)
     end
 end
 local function updateInventory()
-    if not selected or selected.Parent~=Players then selected=player; rebuildPreview() end
+    if not selected or selected.Parent~=Players then
+        selected=player
+        for _,candidate in ipairs(Players:GetPlayers()) do if candidate~=player then selected=candidate; break end end
+        rebuildPreview()
+    end
+    rebuildRoster()
     selectedLabel.Text=selected.DisplayName.." (@"..selected.Name..")"
     local root=inventoryRoot(selected)
     if not root then
@@ -648,7 +741,7 @@ connect(UIS.InputBegan,function(input,processed)
     if processed or UIS:GetFocusedTextBox() or input.KeyCode~=Enum.KeyCode.I then return end
     local camera=workspace.CurrentCamera
     if not camera then return end
-    local best,closest=nil,180
+    local best,closest=nil,math.huge
     for _,target in ipairs(Players:GetPlayers()) do
         local character=target.Character
         local root=character and (character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart"))
@@ -661,7 +754,18 @@ connect(UIS.InputBegan,function(input,processed)
         end
     end
     if inventoryPanel.Visible and (not best or best==selected) then inventoryPanel.Visible=false; return end
-    if best then selected=best; rebuildPreview() end
+    if not best then
+        local me=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        closest=math.huge
+        for _,target in ipairs(Players:GetPlayers()) do
+            local root=target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+            if target~=player and root and me then
+                local d=(root.Position-me.Position).Magnitude
+                if d<closest then closest=d; best=target end
+            end
+        end
+    end
+    if best then selected=best; rosterState.manual=true; rebuildPreview() end
     inventoryPanel.Visible=true
     updateInventory()
 end)
@@ -714,6 +818,9 @@ local function newMarker(target)
     label.TextXAlignment=Enum.TextXAlignment.Center
     label.TextStrokeTransparency=0.35
     label.TextStrokeColor3=Color3.fromRGB(0,0,0)
+    label.BackgroundColor3=Color3.fromRGB(6,17,29)
+    label.BackgroundTransparency=0.22
+    round(label,4)
     local health=make("Frame",frame,{Position=UDim2.fromOffset(-7,0),Size=UDim2.new(0,4,1,0),
         BackgroundColor3=Color3.fromRGB(18,22,29),BorderSizePixel=0,Visible=false})
     local healthFill=make("Frame",health,{AnchorPoint=Vector2.new(0,1),Position=UDim2.fromScale(0,1),
@@ -771,6 +878,7 @@ local function scanRigs()
         end
     end
 end
+loadingPhase(0.8,"Connecting overlays, radar and scene checks")
 local function drawLine(line,a,b)
     local delta=b-a
     line.Position=UDim2.fromOffset((a.X+b.X)/2,(a.Y+b.Y)/2)
@@ -1304,6 +1412,19 @@ connect(RunService.RenderStepped,function(dt)
     end
     radar.Visible=config.radar
     local espColor=Color3.fromRGB(config.espRed,config.espGreen,config.espBlue)
+    local radarRange=config.radarRange
+    local loadedCount=0
+    if config.radarAutoRange then
+        for target in pairs(markers) do
+            local root=rootPart(entityCharacter(target))
+            local meRoot=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if root and meRoot then
+                local d=(root.Position-meRoot.Position).Magnitude
+                if d<=config.maxDistance then radarRange=math.max(radarRange,math.ceil(d/100)*100) end
+            end
+        end
+    end
+    radarFooter.Text=radarRange.." studs / auto "..(config.radarAutoRange and "on" or "off").."\nRed: facing + clear sight (estimate)"
     local me=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     for target,m in pairs(markers) do
         local isFriend=target:IsA("Player") and extraState.friends[target.UserId]==true
@@ -1314,6 +1435,7 @@ connect(RunService.RenderStepped,function(dt)
         local humanoid=character and character:FindFirstChildOfClass("Humanoid")
         local distance=root and me and (root.Position-me.Position).Magnitude or math.huge
         local valid=root and humanoid and humanoid.Health>0 and distance<=config.maxDistance
+        if valid then loadedCount=loadedCount+1 end
         m.frame.Visible=false; m.dot.Visible=false; m.facing.Visible=false
         for _,line in ipairs(m.lines) do line.Visible=false end
         if m.highlight and m.highlight.Adornee~=character then m.highlight:Destroy(); m.highlight=nil end
@@ -1342,11 +1464,12 @@ connect(RunService.RenderStepped,function(dt)
                     m.healthFill.BackgroundColor3=Color3.fromRGB(math.floor(255*(1-hp)),math.floor(70+180*hp),65)
                     m.label.Visible=config.names or config.weaponLabels
                     m.label.TextSize=config.labelSize
-                    m.label.Size=UDim2.new(1,100,0,config.labelSize*2+6)
-                    m.label.Position=UDim2.new(0,-50,0,-config.labelSize*2-8)
+                    m.label.Size=UDim2.new(1,150,0,config.labelSize*2+10)
+                    m.label.Position=UDim2.new(0,-75,0,-config.labelSize*2-12)
                     local weapon=config.weaponLabels and equipped(character) or ""
-                    m.label.Text=(config.names and entityName(target).." / "..math.floor(distance).." studs" or "")
-                        ..(config.names and weapon~="" and "\n" or "")..weapon
+                    local name=target:IsA("Player") and (target.DisplayName.." (@"..target.Name..")") or entityName(target)
+                    local details=math.floor(distance).." studs"..(config.nameHealth and " / "..math.floor(humanoid.Health).." HP" or "")
+                    m.label.Text=(config.names and name.."\n"..details or "")..(config.names and weapon~="" and " / " or "")..weapon
                     if config.skeleton then
                         local i=0
                         for _,motor in ipairs(character:GetDescendants()) do
@@ -1373,14 +1496,16 @@ connect(RunService.RenderStepped,function(dt)
                 if forward.Magnitude<0.001 then forward=Vector3.new(0,0,-1) else forward=forward.Unit end
                 local right=Vector3.new(-forward.Z,0,forward.X)
                 local function project(vector)
-                    if config.radarRotate then return Vector2.new(vector:Dot(right),-vector:Dot(forward))*(radius/config.radarRange) end
-                    return Vector2.new(vector.X,vector.Z)*(radius/config.radarRange)
+                    if config.radarRotate then return Vector2.new(vector:Dot(right),-vector:Dot(forward))*(radius/radarRange) end
+                    return Vector2.new(vector.X,vector.Z)*(radius/radarRange)
                 end
                 local point=project(relative)
                 if math.abs(point.X)<=radius and math.abs(point.Y)<=radius then
                     m.dot.Position=UDim2.fromOffset(center.X+point.X-3,center.Y+point.Y-3)
                     m.dot.Visible=true
-                    m.radarLabel.Visible=false
+                    m.radarLabel.Visible=config.radarNames
+                    m.radarLabel.Text=entityName(target)
+                    m.radarLabel.Size=UDim2.fromOffset(math.max(20,plotSize.X/2-8),16)
                     local head=character:FindFirstChild("Head") or root
                     local toward=me.Position-head.Position
                     local facing= toward.Magnitude>0.001 and head.CFrame.LookVector:Dot(toward.Unit)>=math.cos(math.rad(config.threatAngle))
@@ -1405,6 +1530,11 @@ connect(RunService.RenderStepped,function(dt)
             end
         end
     end
+    sceneStatus.Text=math.max(0,#Players:GetPlayers()-1).." other players\n"..loadedCount.." loaded targets in range"
+    homeStatus.Text="Other players: "..math.max(0,#Players:GetPlayers()-1).."\nLoaded targets in range: "..loadedCount
+        .."\nInspecting: @"..(selected and selected.Name or "none")
+        .."\nIf an inventory is unavailable, that data is not exposed to this client."
+    if rosterState.dirty then rosterState.dirty=false; updateInventory() end
     timer=timer+dt; previewTimer=previewTimer+dt; rigTimer=rigTimer+dt
     if rigTimer>=3 then rigTimer=0; scanRigs(); updateSpecialMarkers() end
     if timer>=1 then
@@ -1436,4 +1566,7 @@ connect(RunService.RenderStepped,function(dt)
     local d=selected and distanceTo(selected.Character)
     previewInfo.Text=previewError~="" and previewError or ((d and tostring(math.floor(d)).." studs" or "Distance unavailable").."\n"..equipped(selected and selected.Character))
 end)
+scanRigs()
 updateInventory()
+loadingPhase(1,"Ready / players and overlays initialized")
+task.defer(function() if loading.Parent then loading:Destroy() end end)
