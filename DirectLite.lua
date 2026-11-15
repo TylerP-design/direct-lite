@@ -1,4 +1,4 @@
--- Direct Lite 0.8.2: hold-to-inspect, real item icons and stacked side staff alerts.
+-- Direct Lite 0.9: three-second intro, explicit game-profile chooser and separate settings.
 -- No external loaders, requests, game remotes, license code or telemetry.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -46,6 +46,14 @@ end
 local gui = make("ScreenGui", player:WaitForChild("PlayerGui"), {
     Name="DirectLite", ResetOnSpawn=false, IgnoreGuiInset=true,
     ZIndexBehavior=Enum.ZIndexBehavior.Sibling, DisplayOrder=80})
+local startupCancel
+env.DirectLiteCleanup=function()
+    alive=false
+    if startupCancel then startupCancel() end
+    for _,connection in ipairs(connections) do connection:Disconnect() end
+    gui:Destroy()
+    env.DirectLiteCleanup=nil
+end
 local function round(object, radius)
     make("UICorner", object, {CornerRadius=UDim.new(0, radius or 8)})
 end
@@ -79,7 +87,62 @@ local function loadingPhase(fraction,label)
     loadingStatus.Text=label
     task.wait()
 end
-loadingPhase(0.1,"Building your workspace")
+local selectedProfile,isDelta,settingsFile,enforceProfile
+do
+    local elapsed=0
+    while elapsed<3 do
+        if not alive then return end
+        local delta=task.wait(0.05)
+        elapsed=elapsed+(type(delta)=="number" and delta>0 and delta or 0.05)
+        loadingFill.Size=UDim2.fromScale(math.min(1,elapsed/3),1)
+        loadingStatus.Text="Welcome / choose your game next"
+    end
+end
+do
+local profiles={"Project Delta","Rivals","Arsenal","Operation 1","BedWars","Phantom Forces"}
+local profileChoice=make("BindableEvent",nil,{})
+startupCancel=function() profileChoice:Fire("__cancel") end
+local profilePicker=make("Frame",loading,{AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.5),
+    Size=UDim2.fromOffset(580,350),BackgroundColor3=Color3.fromRGB(8,20,37),BorderSizePixel=0,ZIndex=103})
+round(profilePicker,12)
+make("UIStroke",profilePicker,{Color=cyan,Transparency=0.3})
+local pickerScale=make("UIScale",profilePicker,{})
+local viewportSize=workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize
+if viewportSize then pickerScale.Scale=math.min(1,(viewportSize.X-30)/580,(viewportSize.Y-30)/350) end
+local pickerTitle=text(profilePicker,"DIRECT LITE / CHOOSE YOUR GAME",UDim2.fromOffset(20,16),UDim2.new(1,-40,0,34),cyan,19)
+pickerTitle.ZIndex=104
+local cancelPicker=button(profilePicker,"X",UDim2.new(1,-43,0,12),UDim2.fromOffset(30,27))
+cancelPicker.ZIndex=105
+connect(cancelPicker.Activated,function() if env.DirectLiteCleanup then env.DirectLiteCleanup() end end)
+local pickerHint=text(profilePicker,"Project Delta tools + shared profiles. Select to open settings.",UDim2.fromOffset(20,53),UDim2.new(1,-40,0,32),muted,11)
+pickerHint.ZIndex=104
+local choiceSent=false
+for i,name in ipairs(profiles) do
+    local column=(i-1)%2
+    local line=math.floor((i-1)/2)
+    local b=button(profilePicker,name,UDim2.fromOffset(20+column*275,100+line*76),UDim2.fromOffset(265,62))
+    b.ZIndex=104
+    local sub=text(b,name=="Project Delta" and "Current integrated tools" or "Shared controls / specific module not installed",UDim2.fromOffset(8,37),UDim2.new(1,-16,0,17),muted,9)
+    sub.ZIndex=105
+    connect(b.Activated,function() if not choiceSent then choiceSent=true; profileChoice:Fire(name) end end)
+end
+loadingTitle.Visible=false; loadingStatus.Visible=false; loadingTrack.Visible=false
+selectedProfile=profileChoice.Event:Wait()
+profileChoice:Destroy(); profilePicker:Destroy()
+startupCancel=nil
+if not alive or selectedProfile=="__cancel" then return end
+loadingTitle.Visible=true; loadingStatus.Visible=true; loadingTrack.Visible=true
+isDelta=selectedProfile=="Project Delta"
+settingsFile="DirectLite."..selectedProfile:gsub("[^%w]","")..".settings.json"
+enforceProfile=function()
+    if isDelta then return end
+    config.silentAim=false; config.noRecoil=false; config.loot=false; config.lootContainers=false
+    config.corpseESP=false; config.minesESP=false; config.bossTracker=false; config.noVisorFlash=false
+end
+if not isDelta then config.modGroup=""; config.modRoles="owner,admin,administrator,moderator,staff"; config.npcESP=false end
+enforceProfile()
+loadingPhase(0.1,"Opening "..selectedProfile.." settings")
+end
 local window = make("Frame", gui, {Size=UDim2.fromOffset(980,620),
     Position=UDim2.new(0.5,0,0.5,0), AnchorPoint=Vector2.new(0.5,0.5),
     BackgroundColor3=Color3.fromRGB(9,16,29), BorderSizePixel=0, ZIndex=10})
@@ -91,7 +154,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.8.3    /    DIRECT LITE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
+text(top,"0.9 / "..selectedProfile,UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -99,7 +162,7 @@ connect(reopen.Activated,function() window.Visible = not window.Visible end)
 local sidebar=make("Frame",window,{Position=UDim2.fromOffset(0,60),Size=UDim2.new(0,155,1,-60),
     BackgroundColor3=Color3.fromRGB(11,21,37),BorderSizePixel=0})
 text(sidebar,"WORKSPACE",UDim2.fromOffset(18,16),UDim2.fromOffset(120,25),muted,10)
-text(sidebar,"DIRECT LITE / 0.8.3",UDim2.new(0,12,1,-25),UDim2.fromOffset(131,20),muted,9)
+text(sidebar,"DIRECT LITE / 0.9",UDim2.new(0,12,1,-25),UDim2.fromOffset(131,20),muted,9)
 local sceneStatus=text(sidebar,"Checking scene...",UDim2.fromOffset(12,478),UDim2.fromOffset(131,48),muted,10)
 sceneStatus.TextWrapped=true
 local pageTitle=text(window,"Aim",UDim2.fromOffset(175,65),UDim2.fromOffset(650,30),nil,21)
@@ -140,6 +203,7 @@ local tabs={}
 for i,name in ipairs({"Home","Combat","Visuals","Loot","Radar","Movement","Weapons","World","Inventory","Staff","Settings"}) do
     local display=({Combat="Aim",Visuals="ESP"})[name] or name
     local b=button(sidebar,display,UDim2.fromOffset(12,43+(i-1)*38),UDim2.fromOffset(131,32))
+    if not isDelta and (name=="Loot" or name=="Weapons" or name=="Inventory") then b.Visible=false end
     tabs[name]=b
     connect(b.Activated,function()
         pageTitle.Text=display
@@ -176,6 +240,7 @@ local function heading(parent,label)
 end
 local function toggle(parent,label,key)
     local r=row(parent,42)
+    if not isDelta and (key=="silentAim" or key=="silentHeadLine" or key=="perfectSilent" or key=="corpseESP" or key=="minesESP" or key=="bossTracker" or key=="noVisorFlash") then r.Visible=false end
     round(r,6)
     local labelText=text(r,label,UDim2.fromOffset(8,0),UDim2.new(1,-80,1,0),nil,12)
     labelText.TextWrapped=true
@@ -198,6 +263,7 @@ local function toggle(parent,label,key)
 end
 local function slider(parent,label,key,low,high)
     local r=row(parent,58)
+    if not isDelta and key=="silentChance" then r.Visible=false end
     round(r,6)
     local title=text(r,"",UDim2.fromOffset(12,1),UDim2.new(1,-24,0,28))
     local track=make("TextButton",r,{Text="",AutoButtonColor=false,BorderSizePixel=0,
@@ -248,11 +314,12 @@ toggle(home,"Fullbright","fullbright")
 toggle(home,"No fog","noFog")
 toggle(home,"Always day","alwaysDay")
 toggle(home,"Zoom","zoom")
-heading(home,"HOW TO INSPECT")
+heading(home,isDelta and "HOW TO INSPECT" or "PROFILE STATUS")
 local inspectorInfo=row(home,118)
 local inspectorText=text(inspectorInfo,"Hold I while looking near a player to inspect their items. Release I to close.\nHover a tile for its name.\nRight Shift: show / hide menu.\nScene status shows actual loaded targets.",UDim2.fromOffset(8,5),UDim2.new(1,-16,1,-10),muted,11)
 inspectorText.TextWrapped=true
 inspectorText.TextYAlignment=Enum.TextYAlignment.Top
+if not isDelta then inspectorText.Text="Shared player visuals, radar, camera and world controls. Dedicated features for "..selectedProfile.." are not installed. Project Delta-only controls are disabled. Settings save separately for this profile." end
 heading(combat,"AIM / SILENT AIM")
 toggle(combat,"Aimbot (camera aim)","aimbot")
 toggle(combat,"Silent aim (takes priority over camera aim)","silentAim")
@@ -407,12 +474,12 @@ local notice=text(settings,"",UDim2.new(),UDim2.new(1,0,0,30),muted,11)
 notice.LayoutOrder=10002
 connect(save.Activated,function()
     if type(writefile)~="function" then notice.Text="File saving is unavailable in this runtime."; return end
-    local ok=pcall(function() writefile("DirectLite.settings.json",HttpService:JSONEncode(config)) end)
+    local ok=pcall(function() writefile(settingsFile,HttpService:JSONEncode(config)) end)
     notice.Text=ok and "Settings saved." or "Could not save settings."
 end)
 connect(load.Activated,function()
     if type(readfile)~="function" then notice.Text="File loading is unavailable in this runtime."; return end
-    local ok,data=pcall(function() return HttpService:JSONDecode(readfile("DirectLite.settings.json")) end)
+    local ok,data=pcall(function() return HttpService:JSONDecode(readfile(settingsFile)) end)
     if not ok or type(data)~="table" then notice.Text="No readable settings file."; return end
     for k,v in pairs(config) do if typeof(data[k])==typeof(v) then config[k]=data[k] end end
     config.maxDistance=math.clamp(config.maxDistance,100,3000)
@@ -433,6 +500,7 @@ connect(load.Activated,function()
     config.espBlue=math.clamp(config.espBlue,0,255)
     config.runSpeed=math.clamp(config.runSpeed,16,40)
     config.zoomFov=math.clamp(config.zoomFov,15,60)
+    enforceProfile()
     for _,refresh in ipairs(refreshControls) do refresh() end
     notice.Text="Settings loaded."
 end)
@@ -783,6 +851,7 @@ local function refreshHeldInspector()
     if changed or not best or tileState.fingerprint=="" then updateInventory() end
 end
 connect(UIS.InputBegan,function(input)
+    if not isDelta then return end
     if UIS:GetFocusedTextBox() or input.KeyCode~=Enum.KeyCode.I then return end
     inspectState.held=true; inspectState.elapsed=0
     refreshHeldInspector()
@@ -1625,7 +1694,7 @@ connect(RunService.RenderStepped,function(dt)
         end
     end
     sceneStatus.Text=math.max(0,#Players:GetPlayers()-1).." other players\n"..loadedCount.." loaded targets in range"
-    homeStatus.Text="Other players: "..math.max(0,#Players:GetPlayers()-1).."\nLoaded targets in range: "..loadedCount
+    homeStatus.Text=selectedProfile..(isDelta and " / integrated tools" or " / shared controls only").."\nOther players: "..math.max(0,#Players:GetPlayers()-1).."\nLoaded targets in range: "..loadedCount
         .."\nInspecting: @"..(selected and selected.Name or "none")
         .."\nIf an inventory is unavailable, that data is not exposed to this client."
     if rosterState.dirty then rosterState.dirty=false; updateInventory() end
