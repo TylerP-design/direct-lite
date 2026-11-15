@@ -1,4 +1,4 @@
--- Direct Lite 0.5: colored ESP, health bars, compact radar and side inventory.
+-- Direct Lite 0.6: card workspace, staff evidence checks and silent diagnostics.
 -- No external loaders, requests, game remotes, license code or telemetry.
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -20,15 +20,18 @@ local config = {esp=false, boxes=true, names=true, skeleton=false, chams=false,
     silentChance=100, perfectSilent=false, npcESP=true, threatLines=true,
     threatAngle=25, climb=false, climbSpeed=22, fovOverride=false, cameraFov=70,
     modAlerts=true, modNames="", radarRotate=true, lineThickness=2,
-    healthBar=true, espRed=56, espGreen=191, espBlue=255}
+    healthBar=true, espRed=56, espGreen=191, espBlue=255,
+    modGroup="", modRoles="owner,admin,administrator,moderator,head moderator,staff"}
 local cyan = Color3.fromRGB(56, 191, 255)
 local muted = Color3.fromRGB(143, 159, 186)
+local sectionTargets={}
 local function connect(signal, callback)
     local c = signal:Connect(callback)
     table.insert(connections, c)
     return c
 end
 local function make(class, parent, props)
+    parent=sectionTargets[parent] or parent
     local object = Instance.new(class)
     for key, value in pairs(props or {}) do object[key] = value end
     object.Parent = parent
@@ -65,7 +68,7 @@ local top = make("Frame",window,{Size=UDim2.new(1,0,0,55),
 round(top,12)
 text(top,"DIRECT",UDim2.fromOffset(20,5),UDim2.fromOffset(76,42),nil,20)
 text(top,"LITE",UDim2.fromOffset(101,5),UDim2.fromOffset(65,42),cyan,20)
-text(top,"0.5    /    WORKSPACE",UDim2.fromOffset(183,6),UDim2.fromOffset(300,40),muted,11)
+text(top,"0.6    /    PRIVATE WORKSPACE",UDim2.fromOffset(183,6),UDim2.fromOffset(340,40),muted,11)
 local close = button(top,"Unload",UDim2.new(1,-87,0,13),UDim2.fromOffset(72,28))
 local reopen = button(gui,"DL",UDim2.fromOffset(12,80),UDim2.fromOffset(44,36))
 reopen.ZIndex=20
@@ -73,18 +76,30 @@ connect(reopen.Activated,function() window.Visible = not window.Visible end)
 local sidebar=make("Frame",window,{Position=UDim2.fromOffset(0,60),Size=UDim2.new(0,155,1,-60),
     BackgroundColor3=Color3.fromRGB(11,21,37),BorderSizePixel=0})
 text(sidebar,"WORKSPACE",UDim2.fromOffset(18,16),UDim2.fromOffset(120,25),muted,10)
-text(sidebar,"DIRECT LITE\nCLIENT 0.5",UDim2.new(0,18,1,-65),UDim2.fromOffset(120,45),muted,10)
-local content = make("Frame",window,{Position=UDim2.fromOffset(175,86),
-    Size=UDim2.fromOffset(438,510),BackgroundTransparency=1})
+text(sidebar,"DIRECT LITE\nCLIENT 0.6",UDim2.new(0,18,1,-65),UDim2.fromOffset(120,45),muted,10)
+local pageTitle=text(window,"Aim",UDim2.fromOffset(175,65),UDim2.fromOffset(650,30),nil,21)
+local content = make("Frame",window,{Position=UDim2.fromOffset(175,108),
+    Size=UDim2.fromOffset(787,488),BackgroundTransparency=1})
 local pages = {}
+local columns,sectionCounts={},{}
+local preview
 local function page(name)
     local p=make("ScrollingFrame",content,{Name=name,Size=UDim2.fromScale(1,1),
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,
         ScrollBarImageColor3=cyan,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,
         Visible=false})
-    make("UIListLayout",p,{Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder})
+    make("UIListLayout",p,{Padding=UDim.new(0,12),SortOrder=Enum.SortOrder.LayoutOrder,
+        FillDirection=Enum.FillDirection.Horizontal,VerticalAlignment=Enum.VerticalAlignment.Top})
     make("UIPadding",p,{PaddingRight=UDim.new(0,8),PaddingBottom=UDim.new(0,12)})
     pages[name]=p
+    columns[p]={}
+    sectionCounts[p]=0
+    for i=1,2 do
+        local column=make("Frame",p,{Size=name=="Inventory" and UDim2.new(1,-8,0,0) or UDim2.new(0.5,-10,0,0),
+            AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,LayoutOrder=i,Visible=name~="Inventory" or i==1})
+        make("UIListLayout",column,{Padding=UDim.new(0,12),SortOrder=Enum.SortOrder.LayoutOrder})
+        columns[p][i]=column
+    end
     return p
 end
 local visuals, inventory, settings = page("Visuals"),page("Inventory"),page("Settings")
@@ -92,12 +107,16 @@ local combat=page("Combat")
 local movement=page("Movement")
 local radarPage=page("Radar")
 local weapons=page("Weapons")
+local staff=page("Staff")
 local tabs={}
-for i,name in ipairs({"Combat","Visuals","Radar","Movement","Weapons","Inventory","Settings"}) do
+for i,name in ipairs({"Combat","Visuals","Radar","Movement","Weapons","Inventory","Staff","Settings"}) do
     local display=({Combat="Aim",Visuals="ESP"})[name] or name
-    local b=button(sidebar,display,UDim2.fromOffset(12,58+(i-1)*46),UDim2.fromOffset(131,36))
+    local b=button(sidebar,display,UDim2.fromOffset(12,52+(i-1)*43),UDim2.fromOffset(131,35))
     tabs[name]=b
     connect(b.Activated,function()
+        pageTitle.Text=display
+        content.Size=UDim2.fromOffset(name=="Inventory" and 438 or 787,488)
+        if preview then preview.Visible=name=="Inventory" end
         for key,p in pairs(pages) do
             p.Visible=key==name
             tabs[key].BackgroundColor3=key==name and Color3.fromRGB(24,67,103) or Color3.fromRGB(24,38,61)
@@ -114,14 +133,23 @@ local function row(parent,height)
         BackgroundColor3=Color3.fromRGB(15,26,44),BorderSizePixel=0,LayoutOrder=order})
 end
 local function heading(parent,label)
-    local r=row(parent,25)
-    r.BackgroundTransparency=1
-    text(r,label,UDim2.fromOffset(0,0),UDim2.fromScale(1,1),cyan,11)
+    sectionCounts[parent]=sectionCounts[parent]+1
+    local index=parent==inventory and 1 or (sectionCounts[parent]-1)%2+1
+    local card=make("Frame",columns[parent][index],{Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,
+        BackgroundColor3=Color3.fromRGB(11,28,46),BorderSizePixel=0,LayoutOrder=sectionCounts[parent]})
+    round(card,9)
+    make("UIStroke",card,{Color=Color3.fromRGB(39,75,106),Transparency=0.15})
+    make("UIPadding",card,{PaddingTop=UDim.new(0,10),PaddingBottom=UDim.new(0,12),PaddingLeft=UDim.new(0,10),PaddingRight=UDim.new(0,10)})
+    make("UIListLayout",card,{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder})
+    local title=text(card,label,UDim2.new(),UDim2.new(1,0,0,30),cyan,13)
+    title.LayoutOrder=-10000
+    sectionTargets[parent]=card
 end
 local function toggle(parent,label,key)
-    local r=row(parent)
+    local r=row(parent,42)
     round(r,6)
-    text(r,label,UDim2.fromOffset(12,0),UDim2.new(1,-90,1,0))
+    local labelText=text(r,label,UDim2.fromOffset(8,0),UDim2.new(1,-80,1,0),nil,12)
+    labelText.TextWrapped=true
     local b=button(r,"",UDim2.new(1,-66,0,7),UDim2.fromOffset(48,24))
     round(b,12)
     local knob=make("Frame",b,{Size=UDim2.fromOffset(18,18),Position=UDim2.fromOffset(3,3),
@@ -174,10 +202,12 @@ heading(combat,"AIM / SILENT AIM")
 toggle(combat,"Aimbot (camera aim)","aimbot")
 toggle(combat,"Silent aim (takes priority over camera aim)","silentAim")
 toggle(combat,"Hold right mouse to activate","aimHold")
+heading(combat,"TARGET FILTERS")
 toggle(combat,"Visibility check","aimVisible")
 toggle(combat,"Skip teammates / same clan","aimTeamCheck")
 toggle(combat,"Aim at torso instead of head","aimBody")
 toggle(combat,"Show FOV circle","aimCircle")
+heading(combat,"AIM TUNING")
 slider(combat,"FOV radius (pixels)","aimFov",20,500)
 slider(combat,"Camera smoothing (1 = instant)","aimSmooth",1,20)
 slider(combat,"Silent hit chance (%)","silentChance",0,100)
@@ -209,6 +239,7 @@ toggle(radarPage,"Player radar", "radar")
 toggle(radarPage,"Radar follows camera rotation","radarRotate")
 slider(radarPage,"Radar range (studs)","radarRange",50,1000)
 slider(radarPage,"Radar size (pixels)","radarSize",120,500)
+heading(radarPage,"SIGHT ESTIMATES")
 toggle(radarPage,"Facing / clear sight red lines","threatLines")
 slider(radarPage,"Facing angle tolerance (degrees)","threatAngle",5,60)
 heading(visuals,"DROPPED ITEMS")
@@ -241,9 +272,9 @@ slider(movement,"Climb speed (studs / second)","climbSpeed",5,50)
 heading(movement,"CAMERA")
 toggle(movement,"Override camera FOV","fovOverride")
 slider(movement,"Camera field of view (degrees)","cameraFov",40,110)
-heading(settings,"MODERATOR WATCHLIST")
-toggle(settings,"Notify for known moderator accounts","modAlerts")
-local modNames=make("TextBox",settings,{Size=UDim2.new(1,0,0,38),LayoutOrder=order+1,
+heading(staff,"KNOWN ACCOUNT WATCHLIST")
+toggle(staff,"Enable staff alerts","modAlerts")
+local modNames=make("TextBox",staff,{Size=UDim2.new(1,0,0,38),LayoutOrder=order+1,
     BackgroundColor3=Color3.fromRGB(21,35,55),BorderSizePixel=0,Text=config.modNames,
     PlaceholderText="Exact usernames or user IDs, comma separated",TextColor3=Color3.new(1,1,1),
     PlaceholderColor3=muted,Font=Enum.Font.Gotham,TextSize=11,ClearTextOnFocus=false})
@@ -251,9 +282,31 @@ order=order+1
 round(modNames,6)
 connect(modNames.FocusLost,function() config.modNames=modNames.Text end)
 table.insert(refreshControls,function() modNames.Text=config.modNames end)
-local modHint=row(settings,48)
-local mh=text(modHint,"Add known accounts above. No automatic moderator roster is configured.",UDim2.fromOffset(10,4),UDim2.new(1,-20,1,-8),muted,11)
+local modHint=row(staff,58)
+local mh=text(modHint,"Exact account matches and public group-role evidence only. Hidden staff cannot be identified reliably.",UDim2.fromOffset(10,4),UDim2.new(1,-20,1,-8),muted,11)
 mh.TextWrapped=true
+heading(staff,"PUBLIC GROUP ROLES")
+local groupInput=make("TextBox",staff,{Size=UDim2.new(1,0,0,36),LayoutOrder=order+1,
+    Text=config.modGroup,PlaceholderText="Group ID (blank: experience creator group)",ClearTextOnFocus=false,
+    Font=Enum.Font.Gotham,TextSize=10,TextColor3=Color3.new(1,1,1),PlaceholderColor3=muted,
+    BackgroundColor3=Color3.fromRGB(21,35,55),BorderSizePixel=0})
+order=order+1
+local rolesInput=make("TextBox",staff,{Size=UDim2.new(1,0,0,55),LayoutOrder=order+1,
+    Text=config.modRoles,PlaceholderText="Exact public role names, comma separated",ClearTextOnFocus=false,
+    TextWrapped=true,Font=Enum.Font.Gotham,TextSize=10,TextColor3=Color3.new(1,1,1),PlaceholderColor3=muted,
+    BackgroundColor3=Color3.fromRGB(21,35,55),BorderSizePixel=0})
+order=order+1
+connect(groupInput.FocusLost,function() config.modGroup=groupInput.Text end)
+connect(rolesInput.FocusLost,function() config.modRoles=rolesInput.Text end)
+table.insert(refreshControls,function() groupInput.Text=config.modGroup; rolesInput.Text=config.modRoles end)
+local roleStatus=text(staff,"Waiting for public-role scan",UDim2.new(),UDim2.new(1,0,0,0),muted,11)
+roleStatus.AutomaticSize=Enum.AutomaticSize.Y
+roleStatus.TextWrapped=true
+roleStatus.LayoutOrder=order+1
+order=order+1
+local scanStaff=button(staff,"Refresh public-role evidence",UDim2.new(),UDim2.new(1,0,0,32))
+scanStaff.LayoutOrder=order+1
+order=order+1
 heading(settings,"CHARACTER PREVIEW")
 toggle(settings,"Preview bounding box","previewBox")
 toggle(settings,"Cyan model material","previewTint")
@@ -299,8 +352,8 @@ connect(load.Activated,function()
     notice.Text="Settings loaded."
 end)
 -- Preview: a real character clone in a private WorldModel, not a screenshot.
-local preview=make("Frame",window,{Position=UDim2.fromOffset(635,86),Size=UDim2.fromOffset(327,510),
-    BackgroundColor3=Color3.fromRGB(12,22,37),BorderSizePixel=0})
+preview=make("Frame",window,{Position=UDim2.fromOffset(635,108),Size=UDim2.fromOffset(327,488),
+    BackgroundColor3=Color3.fromRGB(12,22,37),BorderSizePixel=0,Visible=false})
 round(preview,8)
 text(preview,"CHARACTER PREVIEW",UDim2.fromOffset(15,10),UDim2.fromOffset(260,22),muted,11)
 local previewName=text(preview,"",UDim2.fromOffset(15,36),UDim2.fromOffset(297,26),cyan,13)
@@ -684,7 +737,10 @@ local function applyRecoil()
 end
 local function releaseViewmodel()
     if viewPart and viewPart.Parent and viewOffset and workspace.CurrentCamera then
-        viewPart.CFrame=workspace.CurrentCamera.CFrame*viewOffset
+        local world=workspace.CurrentCamera.CFrame*viewOffset
+        if viewPart:IsA("Attachment") and viewPart.Parent:IsA("BasePart") then
+            viewPart.CFrame=viewPart.Parent.CFrame:ToObjectSpace(world)
+        elseif viewPart:IsA("BasePart") then viewPart.CFrame=world end
     end
     viewPart=nil; viewOffset=nil
 end
@@ -737,6 +793,34 @@ local recoilCount=0
 local wasNoRecoil=false
 local cameraOriginals={}
 local alerted={}
+local roleCache={}
+local staffBusy=false
+local function splitSet(value)
+    local result={}
+    for item in value:gmatch("[^,]+") do
+        local key=item:match("^%s*(.-)%s*$"):lower()
+        if key~="" then result[key]=true end
+    end
+    return result
+end
+local function configuredGroup()
+    local id=tonumber(config.modGroup)
+    if id and id>0 then return math.floor(id) end
+    if config.modGroup:match("^%s*$") and game.CreatorType==Enum.CreatorType.Group then return game.CreatorId end
+    return nil
+end
+local function notifyStaff(target,reason)
+    if alerted[target.UserId] or not config.modAlerts or not alive then return end
+    alerted[target.UserId]=true
+    pcall(function() game:GetService("StarterGui"):SetCore("SendNotification",{
+        Title="Direct Lite / staff evidence",Text=target.Name..": "..reason,Duration=10}) end)
+    local toast=make("Frame",gui,{Position=UDim2.new(0.5,-200,0,20),Size=UDim2.fromOffset(400,65),
+        BackgroundColor3=Color3.fromRGB(110,33,50),BorderSizePixel=0,ZIndex=30})
+    round(toast,8)
+    local message=text(toast,target.Name.."\n"..reason,UDim2.fromOffset(12,6),UDim2.new(1,-24,1,-12),nil,12)
+    message.TextWrapped=true; message.ZIndex=31
+    task.delay(10,function() if toast.Parent then toast:Destroy() end end)
+end
 local function restoreFov()
     for camera,original in pairs(cameraOriginals) do
         if camera.Parent then camera.FieldOfView=original end
@@ -744,23 +828,54 @@ local function restoreFov()
     end
 end
 local function checkModerators()
-    if not config.modAlerts then return end
-    local names={}
-    for value in config.modNames:gmatch("[^,]+") do names[value:match("^%s*(.-)%s*$"):lower()]=true end
+    local names=splitSet(config.modNames)
+    local roles=splitSet(config.modRoles)
+    local group=configuredGroup()
+    local summary={group and "Public group: "..group or "No group selected; watchlist only."}
     for _,target in ipairs(Players:GetPlayers()) do
-        if target~=player and (names[target.Name:lower()] or names[tostring(target.UserId)]) and not alerted[target.UserId] then
-            alerted[target.UserId]=true
-            pcall(function() game:GetService("StarterGui"):SetCore("SendNotification",{
-                Title="Direct Lite / moderator watchlist",Text=target.Name.." is in this server",Duration=10}) end)
-            local toast=make("Frame",gui,{Position=UDim2.new(0.5,-180,0,20),Size=UDim2.fromOffset(360,52),
-                BackgroundColor3=Color3.fromRGB(110,33,50),BorderSizePixel=0,ZIndex=30})
-            round(toast,8)
-            local message=text(toast,"WATCHLIST: "..target.Name.." joined",UDim2.fromOffset(12,6),UDim2.new(1,-24,1,-12),nil,13)
-            message.ZIndex=31
-            task.delay(10,function() if toast.Parent then toast:Destroy() end end)
+        if target~=player then
+            local match=names[target.Name:lower()] or names[tostring(target.UserId)]
+            if match then notifyStaff(target,"Exact configured account match") end
+            local cached=group and roleCache[tostring(group)..":"..target.UserId]
+            local details=match and "WATCHLIST" or "No watchlist match"
+            if cached then
+                if cached.error then details=details.." / role lookup unavailable"
+                else
+                    for _,role in ipairs(cached.roles) do
+                        if roles[role.Name:lower()] then notifyStaff(target,"Public role: "..role.Name.." / group "..group) end
+                    end
+                    local labels={}
+                    for _,role in ipairs(cached.roles) do table.insert(labels,role.Name.." ("..role.Rank..")") end
+                    details=details.." / "..(#labels>0 and table.concat(labels,", ") or "No public role")
+                end
+            elseif group then details=details.." / awaiting role lookup" end
+            table.insert(summary,target.Name..": "..details)
         end
     end
+    roleStatus.Text=table.concat(summary,"\n").."\nNo match does not establish that an account is not staff."
+    if not group or staffBusy then return end
+    staffBusy=true
+    task.spawn(function()
+        for _,target in ipairs(Players:GetPlayers()) do
+            if not alive then break end
+            local key=tostring(group)..":"..target.UserId
+            local cached=roleCache[key]
+            if target~=player and (not cached or os.clock()-cached.time>(cached.error and 60 or 300)) then
+                local ok,data=pcall(function() return game:GetService("GroupService"):GetRolesInGroupAsync(target.UserId,group) end)
+                if not ok or type(data)~="table" or type(data.Roles)~="table" then
+                    ok,data=pcall(function()
+                        local name=target:GetRoleInGroupAsync(group)
+                        return {Roles=name~="Guest" and {{Name=name,Rank=0}} or {}}
+                    end)
+                end
+                local valid=ok and type(data)=="table" and type(data.Roles)=="table"
+                if alive then roleCache[key]={roles=valid and data.Roles or {},error=not valid,time=os.clock()} end
+            end
+        end
+        staffBusy=false
+    end)
 end
+connect(scanStaff.Activated,function() roleCache={}; alerted={}; checkModerators() end)
 connect(Players.PlayerRemoving,function(target) alerted[target.UserId]=nil end)
 local bindName="DirectLiteCombat"
 local function updateCombat(dt)
@@ -806,26 +921,41 @@ local function updateCombat(dt)
     if not part then releaseViewmodel(); combatStatus.Text=recoilText.."\nNo eligible target inside FOV"; return end
     if config.silentAim then
         local model=camera:FindFirstChild("ViewModel")
+        if not model then
+            for _,candidate in ipairs(camera:GetChildren()) do
+                if candidate.Name:lower()=="viewmodel" then model=candidate; break end
+            end
+        end
         local root=nil
         if model and config.perfectSilent then
             local item=model:FindFirstChild("Item")
             local points=item and item:FindFirstChild("AttachmentPoints")
             root=points and points:FindFirstChild("Extra")
-        elseif model then root=model:FindFirstChild("HumanoidRootPart") end
-        if not root or not root:IsA("BasePart") then
+        elseif model then root=model:FindFirstChild("HumanoidRootPart",true) end
+        if not root and model then
+            local item=model:FindFirstChild("Item")
+            local points=item and item:FindFirstChild("AttachmentPoints")
+            root=points and points:FindFirstChild("Extra")
+        end
+        if not model or not root or not (root:IsA("BasePart") or root:IsA("Attachment") and root.Parent:IsA("BasePart")) then
             releaseViewmodel()
-            combatStatus.Text=recoilText.."\nSilent aim: expected viewmodel part is unavailable"
+            combatStatus.Text=recoilText.."\n"..(not model and "Silent aim unavailable: no weapon ViewModel. Baseplate Tools are unsupported." or "Silent aim: weapon root / Extra attachment not found. Try the attachment variant.")
             return
         end
-        if viewPart~=root then releaseViewmodel(); viewPart=root; viewOffset=camera.CFrame:ToObjectSpace(root.CFrame) end
+        local world=root:IsA("Attachment") and root.WorldCFrame or root.CFrame
+        if viewPart~=root then releaseViewmodel(); viewPart=root; viewOffset=camera.CFrame:ToObjectSpace(world) end
         if math.random()*100<config.silentChance then
             local offset=config.perfectSilent and 0.15 or 1.75
             local position=part.Position-Vector3.new(0,offset,0)
-            if (root.Position-position).Magnitude>0.001 then root.CFrame=CFrame.lookAt(root.Position,position) end
+            if (world.Position-position).Magnitude>0.001 then
+                local redirect=CFrame.lookAt(world.Position,position)
+                if root:IsA("Attachment") then root.CFrame=root.Parent.CFrame:ToObjectSpace(redirect)
+                else root.CFrame=redirect end
+            end
         else
             releaseViewmodel()
         end
-        combatStatus.Text=recoilText.."\nSilent aim: "..target.DisplayName
+        combatStatus.Text=recoilText.."\nViewmodel redirected: "..target.DisplayName.." (hit registration unverified)"
     else
         releaseViewmodel()
         local position=camera.CFrame.Position
