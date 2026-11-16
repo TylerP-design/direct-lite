@@ -1,0 +1,41 @@
+name: Build Direct Lite Desktop Preview
+on:
+  push:
+    branches: [desktop-preview-exe]
+    paths: ['desktop_preview/**', '.github/workflows/desktop-preview.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r desktop_preview/requirements.txt pyinstaller
+      - name: Test settings and profiles
+        run: python desktop_preview/test_app.py
+      - name: Build single executable
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name DirectLitePreview desktop_preview/main.py
+      - name: Smoke test packaged app
+        shell: python
+        run: |
+          import os, subprocess, pathlib, hashlib
+          preview = pathlib.Path(os.environ['RUNNER_TEMP']) / 'desktop-preview-smoke.png'
+          executable = pathlib.Path('dist/DirectLitePreview.exe').resolve()
+          subprocess.run([str(executable), '--preview', str(preview)], check=True, timeout=90)
+          assert preview.exists() and preview.stat().st_size > 1000
+          print('Packaged application rendered successfully')
+          print('SHA256:', hashlib.sha256(executable.read_bytes()).hexdigest())
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DirectLitePreview-Windows
+          path: dist/DirectLitePreview.exe
+          if-no-files-found: error
+          retention-days: 7
