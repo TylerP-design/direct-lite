@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 from catalog import CATALOG, clean_catalog
 
-GAMES = ['ROB RUN', 'CS2', 'Delta Force', 'Rust', 'Call of Duty']
+GAMES = ['ROB RUN']
 DEFAULTS = dict(skeleton=True, boxes=True, names=True, distance=True, radar=True,
                 target_line=True, fov_circle=True, fov=249, max_distance=500,
                 loot=True, weapons=True, ammo=True, armor=True, accent='#29bfff')
@@ -78,7 +78,7 @@ def settings_path(game: str) -> Path:
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle('Direct Lite · Settings')
+        self.setWindowTitle('Direct Lite · ROB RUN')
         self.resize(1080, 760)
         self.setMinimumSize(1000, 680)
         self.game = 'ROB RUN'
@@ -103,7 +103,6 @@ class Window(QMainWindow):
         sl.addWidget(self.progress, alignment=Qt.AlignmentFlag.AlignHCenter)
         sl.addStretch()
         self.stack.addWidget(self.splash)
-        self.products = self.build_products(); self.stack.addWidget(self.products)
         self.workbench = self.build_workbench(); self.stack.addWidget(self.workbench)
         self.timer = QTimer(self); self.timer.setInterval(33); self.timer.timeout.connect(self.tick)
         self.intro = QTimer(self); self.intro.setInterval(50); self.intro.timeout.connect(self.intro_tick)
@@ -114,20 +113,7 @@ class Window(QMainWindow):
         self.intro_step += 1
         self.progress.setValue(min(100, self.intro_step * 100 // 60))
         if self.intro_step >= 60:
-            self.intro.stop(); self.stack.setCurrentWidget(self.products)
-
-    def build_products(self):
-        page = QWidget(); lay = QVBoxLayout(page); lay.setContentsMargins(36, 30, 36, 30)
-        title = QLabel('DIRECT LITE / PRODUCTS'); title.setStyleSheet('font-size:25px;font-weight:700;color:#58caff')
-        lay.addWidget(title)
-        lay.addWidget(QLabel('Choose a profile. Profiles store preferences only; no live game integration is installed.'))
-        for game in GAMES:
-            card = QGroupBox(game); row = QHBoxLayout(card)
-            row.addWidget(QLabel('Desktop settings interface\nNo subscription or expiry · source included'), 1)
-            launch = QPushButton('Open settings'); launch.clicked.connect(lambda checked=False, g=game: self.open_profile(g))
-            row.addWidget(launch); lay.addWidget(card)
-        lay.addStretch()
-        return page
+            self.intro.stop(); self.open_profile('ROB RUN')
 
     def check(self, layout, label, key):
         box = QCheckBox(label); box.setChecked(self.config[key])
@@ -202,8 +188,6 @@ class Window(QMainWindow):
     def build_workbench(self):
         root = QWidget(); outer = QVBoxLayout(root)
         top = QHBoxLayout()
-        back = QPushButton('‹ Products'); back.clicked.connect(self.back)
-        top.addWidget(back)
         self.profile_label = QLabel('ROB RUN / SETTINGS'); self.profile_label.setStyleSheet('font-size:21px;font-weight:700;')
         top.addWidget(self.profile_label, 1)
         top.addWidget(QLabel('Not connected'))
@@ -215,7 +199,7 @@ class Window(QMainWindow):
         settings = QWidget(); settings_layout = QVBoxLayout(settings)
         for label, fn in [('Save profile', self.save), ('Load profile', self.load), ('Export JSON', self.export), ('Import JSON', self.import_json), ('Reset settings', self.reset)]:
             button = QPushButton(label); button.clicked.connect(fn); settings_layout.addWidget(button)
-        settings_layout.addWidget(QLabel('Settings are stored separately for each profile.\nThere is no licence check or expiration.\nThe app never accesses a game process.'))
+        settings_layout.addWidget(QLabel('ROB RUN settings are stored locally.\nThere is no licence check or expiration.\nThe app never accesses a game process.'))
         settings_layout.addWidget(self.catalog_pane('Settings'), 1); tabs.addTab(settings, 'Settings')
         return root
 
@@ -242,6 +226,7 @@ class Window(QMainWindow):
             if isinstance(control, QSlider): control.valueChanged.emit(control.value())
 
     def open_profile(self, game):
+        if game != 'ROB RUN': raise ValueError('This build supports only ROB RUN settings.')
         self.intro.stop(); self.game = game; self.config = new_config()
         path = settings_path(game)
         if path.exists():
@@ -249,9 +234,6 @@ class Window(QMainWindow):
             except (OSError, ValueError): self.statusBar().showMessage('Saved settings could not be loaded; using defaults. Not connected to a game.')
         self.profile_label.setText(f'{game} / SETTINGS')
         self.sync(); self.stack.setCurrentWidget(self.workbench)
-
-    def back(self):
-        self.timer.stop(); self.stack.setCurrentWidget(self.products)
 
     def tick(self):
         pass

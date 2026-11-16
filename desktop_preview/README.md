@@ -1,9 +1,7 @@
-# Direct Lite Desktop Settings
+# Direct Lite - ROB RUN Settings
 
-The simulated scene, demo radar, stick figures, fake player list and preview animation have been removed. This build contains only profile selection and the settings interface. It retains a small Not connected status. There is no live game connection, game-process access or injection.
+This single-game build opens ROB RUN settings immediately after the three-second introduction. There is no Products page, game picker, simulated scene, demo radar or fake roster.
 
-Settings from the supplied reference screenshots are saved per profile. Their presence does not mean corresponding game features are implemented.
+The executable contains the interface and local preferences only. It has no live ROB RUN connection, functional game ESP/aiming, injection, account authentication or licence verification.
 
-Windows builds are available from the desktop-preview-exe branch Actions workflow. The packaged EXE does not require a separate Python installation.
-
-For source development: install requirements.txt, then run main.py. Run test_app.py for settings checks.
+The standalone Windows EXE does not require Python. Source developers can install requirements.txt, run main.py, and run test_app.py for validation.

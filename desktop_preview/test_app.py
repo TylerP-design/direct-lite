@@ -40,12 +40,22 @@ class AppChecks(unittest.TestCase):
                     window.open_profile(game)
                     self.assertEqual(window.config['fov'], 70 + index)
                     self.assertFalse(window.timer.isActive())
-                window.back()
                 self.assertFalse(window.timer.isActive())
             finally:
                 window.close()
                 if previous is None: os.environ.pop('APPDATA', None)
                 else: os.environ['APPDATA'] = previous
+
+    def test_intro_opens_rob_run_directly(self):
+        window = Window()
+        try:
+            for _ in range(60): window.intro_tick()
+            self.assertEqual(window.game, 'ROB RUN')
+            self.assertIs(window.stack.currentWidget(), window.workbench)
+            self.assertFalse(hasattr(window, 'products'))
+            with self.assertRaises(ValueError): window.open_profile('CS2')
+        finally:
+            window.close()
 
     def test_reference_settings_persist(self):
         previous = os.environ.get('APPDATA')
@@ -54,6 +64,7 @@ class AppChecks(unittest.TestCase):
             window = Window()
             try:
                 window.open_profile('ROB RUN')
+                self.assertFalse(hasattr(window,'products'))
                 self.assertFalse(hasattr(window,'scene'))
                 self.assertFalse(hasattr(window,'roster'))
                 self.assertEqual(set(window.catalog_controls), set(specifications()))
