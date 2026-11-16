@@ -39,12 +39,7 @@ class AppChecks(unittest.TestCase):
                 for index, game in enumerate(GAMES):
                     window.open_profile(game)
                     self.assertEqual(window.config['fov'], 70 + index)
-                    self.assertTrue(window.timer.isActive())
-                    window.toggle_preview()
                     self.assertFalse(window.timer.isActive())
-                window.filter_roster('cop')
-                self.assertEqual(window.roster.count(), 1)
-                self.assertIn('demo', window.roster.item(0).text().lower())
                 window.back()
                 self.assertFalse(window.timer.isActive())
             finally:
@@ -59,6 +54,8 @@ class AppChecks(unittest.TestCase):
             window = Window()
             try:
                 window.open_profile('ROB RUN')
+                self.assertFalse(hasattr(window,'scene'))
+                self.assertFalse(hasattr(window,'roster'))
                 self.assertEqual(set(window.catalog_controls), set(specifications()))
                 key = 'Aimbot/Main/Type'
                 window.catalog_controls[key].setCurrentText('Camera')
